@@ -24,4 +24,14 @@ describe("resolveBinary", () => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
     expect(resolveBinary("gallery-dl")).toBe("/opt/homebrew/bin/gallery-dl");
   });
+
+  it("resolves a managed binary inside the managed directory", () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+    expect(resolveBinary("spotdl", undefined, "/support")).toBe("/support/spotdl");
+  });
+
+  it("lets an existing preference path override the managed directory", () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    expect(resolveBinary("spotdl", "/custom/spotdl", "/support")).toBe("/custom/spotdl");
+  });
 });
