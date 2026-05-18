@@ -68,7 +68,11 @@ export default function Command() {
   }
 
   async function handleOnboardingComplete() {
-    await LocalStorage.setItem(ONBOARDING_KEY, "true");
+    try {
+      await LocalStorage.setItem(ONBOARDING_KEY, "true");
+    } catch {
+      /* storage write failed — proceed anyway so the user is not stuck */
+    }
     setShowOnboarding(false);
   }
 
