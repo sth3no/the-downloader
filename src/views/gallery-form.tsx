@@ -4,8 +4,15 @@ import { Action, ActionPanel, Form, Icon, Toast, getPreferenceValues, open, show
 import { getGalleryDlPath } from "../utils.js";
 import { runGalleryDownload } from "../lib/gallerydl.js";
 import Installer from "./installer.js";
+import { SourceType } from "../types.js";
 
-export function GalleryForm({ url }: { url: string }) {
+type GalleryFormProps = {
+  url: string;
+  typeValue: SourceType;
+  onTypeChange: (t: SourceType) => void;
+};
+
+export function GalleryForm({ url, typeValue, onTypeChange }: GalleryFormProps) {
   const [refresh, setRefresh] = useState(0);
   const { downloadPath, cookiesFromBrowser } = getPreferenceValues<ExtensionPreferences>();
   const galleryDlPath = getGalleryDlPath();
@@ -44,6 +51,10 @@ export function GalleryForm({ url }: { url: string }) {
         </ActionPanel>
       }
     >
+      <Form.Dropdown id="sourceType" title="Type" value={typeValue} onChange={(v) => onTypeChange(v as SourceType)}>
+        <Form.Dropdown.Item value="video" title="Video / Audio" />
+        <Form.Dropdown.Item value="gallery" title="Gallery" />
+      </Form.Dropdown>
       <Form.TextField id="url" title="URL" defaultValue={url} placeholder="https://imgur.com/a/..." />
       <Form.FilePicker
         id="destination"
