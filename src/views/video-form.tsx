@@ -12,6 +12,7 @@ import {
   showHUD,
   showToast,
   Toast,
+  useNavigation,
 } from "@raycast/api";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, usePromise } from "@raycast/utils";
@@ -34,6 +35,7 @@ import { fetchVideoInfo, buildVideoDownloadArgs } from "../lib/ytdlp.js";
 import extractTranscript from "../transcript.js";
 import Installer from "./installer.js";
 import Updater from "./updater.js";
+import { Onboarding } from "./onboarding.js";
 
 const { downloadPath, forceIpv4 } = getPreferenceValues<ExtensionPreferences>();
 
@@ -47,6 +49,7 @@ type VideoFormProps = {
 export function VideoForm({ url, onUrlChange, typeValue, onTypeChange }: VideoFormProps) {
   const [error, setError] = useState(0);
   const [warning, setWarning] = useState("");
+  const { pop } = useNavigation();
 
   const ytdlPath = useMemo(() => getytdlPath(), [error]);
   const ffmpegPath = useMemo(() => getffmpegPath(), [error]);
@@ -251,6 +254,7 @@ export function VideoForm({ url, onUrlChange, typeValue, onTypeChange }: VideoFo
           </ActionPanel.Section>
           <ActionPanel.Section>
             <Action.Push icon={Icon.Hammer} title="Update Libraries" target={<Updater />} />
+            <Action.Push icon={Icon.Gear} title="Setup & Tools" target={<Onboarding onComplete={pop} />} />
           </ActionPanel.Section>
         </ActionPanel>
       }
