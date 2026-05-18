@@ -17,7 +17,7 @@ export type DownloaderConfig = {
 export function getConfig(): DownloaderConfig {
   const prefs = getPreferenceValues<ExtensionPreferences>();
   return {
-    videoMediaType: prefs.videoMediaType as VideoMediaType,
+    videoMediaType: prefs.videoMediaType,
     videoQuality: prefs.videoQuality,
     videoContainer: prefs.videoContainer,
     audioFormat: prefs.audioFormat,

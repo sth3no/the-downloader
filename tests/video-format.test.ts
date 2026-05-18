@@ -27,4 +27,8 @@ describe("videoFormatSelector", () => {
   it("maps 'smallest' to a worst-quality selector", () => {
     expect(videoFormatSelector("smallest")).toBe("worstvideo+worstaudio/worst");
   });
+
+  it("falls back to the uncapped selector for an unrecognised token", () => {
+    expect(videoFormatSelector("360")).toBe("bestvideo+bestaudio/best");
+  });
 });
