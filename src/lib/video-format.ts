@@ -12,3 +12,21 @@ export function videoFormatSelector(quality: string): string {
   }
   return "bestvideo+bestaudio/best";
 }
+
+/**
+ * Compose the `format` string consumed by `buildVideoDownloadArgs` from the
+ * Section 1 download defaults. Audio downloads become `bestaudio#<audioFormat>`;
+ * video downloads become `<quality selector>#<container>`. The `#` separates the
+ * download-format selector from the recode/extract target.
+ */
+export function composeVideoFormat(o: {
+  mediaType: "video" | "audio";
+  quality: string;
+  container: string;
+  audioFormat: string;
+}): string {
+  if (o.mediaType === "audio") {
+    return `bestaudio#${o.audioFormat}`;
+  }
+  return `${videoFormatSelector(o.quality)}#${o.container}`;
+}

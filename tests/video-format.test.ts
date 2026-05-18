@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { videoFormatSelector } from "../src/lib/video-format";
+import { videoFormatSelector, composeVideoFormat } from "../src/lib/video-format";
 
 describe("videoFormatSelector", () => {
   it("maps 'best' to an uncapped selector", () => {
@@ -30,5 +30,31 @@ describe("videoFormatSelector", () => {
 
   it("falls back to the uncapped selector for an unrecognised token", () => {
     expect(videoFormatSelector("360")).toBe("bestvideo+bestaudio/best");
+  });
+});
+
+describe("composeVideoFormat", () => {
+  it("composes a video format as '<selector>#<container>'", () => {
+    expect(
+      composeVideoFormat({ mediaType: "video", quality: "best", container: "mp4", audioFormat: "mp3" }),
+    ).toBe("bestvideo+bestaudio/best#mp4");
+  });
+
+  it("applies the quality cap and container for video", () => {
+    expect(
+      composeVideoFormat({ mediaType: "video", quality: "1080", container: "mkv", audioFormat: "mp3" }),
+    ).toBe("bestvideo[height<=1080]+bestaudio/best[height<=1080]#mkv");
+  });
+
+  it("composes an audio format as 'bestaudio#<audioFormat>', ignoring quality and container", () => {
+    expect(
+      composeVideoFormat({ mediaType: "audio", quality: "1080", container: "mp4", audioFormat: "opus" }),
+    ).toBe("bestaudio#opus");
+  });
+
+  it("passes the chosen audio format through", () => {
+    expect(
+      composeVideoFormat({ mediaType: "audio", quality: "best", container: "mp4", audioFormat: "m4a" }),
+    ).toBe("bestaudio#m4a");
   });
 });
