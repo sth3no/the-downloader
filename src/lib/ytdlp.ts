@@ -6,7 +6,9 @@ import { MP3_FORMAT_ID } from "../utils.js";
 export async function fetchVideoInfo(ytdlPath: string, url: string, forceIpv4: boolean): Promise<Video> {
   const result = await execa(
     ytdlPath,
-    [forceIpv4 ? "--force-ipv4" : "", "--no-playlist", "--dump-json", "--format-sort=resolution,ext,tbr", url].filter(Boolean),
+    [forceIpv4 ? "--force-ipv4" : "", "--no-playlist", "--dump-json", "--format-sort=resolution,ext,tbr", url].filter(
+      Boolean,
+    ),
     { env: { ...process.env, PYTHONUNBUFFERED: "1" } },
   );
   return JSON.parse(result.stdout) as Video;

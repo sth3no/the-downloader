@@ -1,9 +1,18 @@
 import { SourceType } from "../types.js";
 
 const GALLERY_DOMAINS = [
-  "reddit.com", "redd.it", "imgur.com", "pixiv.net", "deviantart.com",
-  "flickr.com", "danbooru.donmai.us", "gelbooru.com", "artstation.com",
-  "pinterest.com", "tumblr.com", "instagram.com",
+  "reddit.com",
+  "redd.it",
+  "imgur.com",
+  "pixiv.net",
+  "deviantart.com",
+  "flickr.com",
+  "danbooru.donmai.us",
+  "gelbooru.com",
+  "artstation.com",
+  "pinterest.com",
+  "tumblr.com",
+  "instagram.com",
 ];
 
 function hostnameOf(url: string): string {

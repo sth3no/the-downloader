@@ -136,7 +136,13 @@ function parseWingetVersion(output: string): string {
 
 async function getOutdated() {
   if (isMac) {
-    const { stdout: outdatedOutput } = await execa(homebrewPath, ["outdated", "--json=v2", "yt-dlp", "ffmpeg", "gallery-dl"]);
+    const { stdout: outdatedOutput } = await execa(homebrewPath, [
+      "outdated",
+      "--json=v2",
+      "yt-dlp",
+      "ffmpeg",
+      "gallery-dl",
+    ]);
     const outdated = JSON.parse(outdatedOutput) as { formulae: { name: string; current_version: string }[] };
     const versions = Object.fromEntries(outdated.formulae.map(({ name, current_version }) => [name, current_version]));
     return versions;

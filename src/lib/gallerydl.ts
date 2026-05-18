@@ -28,7 +28,10 @@ export function runGalleryDownload(
     let stderr = "";
     child.stdout.on("data", (data: Buffer) => {
       // gallery-dl prints one downloaded file path per line, so non-empty lines ≈ files downloaded (progress estimate).
-      const lines = data.toString().split("\n").filter((l) => l.trim().length > 0);
+      const lines = data
+        .toString()
+        .split("\n")
+        .filter((l) => l.trim().length > 0);
       files += lines.length;
       onProgress({ files });
     });

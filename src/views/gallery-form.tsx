@@ -56,7 +56,13 @@ export function GalleryForm({ url, typeValue, onTypeChange, onUrlChange }: Galle
         <Form.Dropdown.Item value="video" title="Video / Audio" />
         <Form.Dropdown.Item value="gallery" title="Gallery" />
       </Form.Dropdown>
-      <Form.TextField id="url" title="URL" defaultValue={url} placeholder="https://imgur.com/a/..." onChange={onUrlChange} />
+      <Form.TextField
+        id="url"
+        title="URL"
+        defaultValue={url}
+        placeholder="https://imgur.com/a/..."
+        onChange={onUrlChange}
+      />
       <Form.FilePicker
         id="destination"
         title="Destination"

@@ -6,7 +6,11 @@ export const isMac = process.platform === "darwin";
 
 function whichWindows(name: string): string {
   try {
-    return execFileSync("where", [name]).toString().split("\n")[0].replace(/[\r\n]/g, "").trim();
+    return execFileSync("where", [name])
+      .toString()
+      .split("\n")[0]
+      .replace(/[\r\n]/g, "")
+      .trim();
   } catch {
     return "";
   }
