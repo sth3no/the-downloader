@@ -43,13 +43,13 @@ winget install --id=yt-dlp.yt-dlp -e
 export default function Installer({ executable, onRefresh }: { executable: string; onRefresh: () => void }) {
   return (
     <Detail
-      actions={<AutoInstall onRefresh={onRefresh} />}
+      actions={<AutoInstall executable={executable} onRefresh={onRefresh} />}
       markdown={isMac ? macOSInstallGuide(executable) : windowsInstallGuide(executable)}
     />
   );
 }
 
-function AutoInstall({ onRefresh }: { onRefresh: () => void }) {
+function AutoInstall({ executable, onRefresh }: { executable: string; onRefresh: () => void }) {
   const [isLoading, setIsLoading] = useState(false);
 
   return (
@@ -66,7 +66,7 @@ function AutoInstall({ onRefresh }: { onRefresh: () => void }) {
             await installationToast.show();
 
             try {
-              await execa(homebrewPath, ["install", "yt-dlp", "ffmpeg"]);
+              await execa(homebrewPath, ["install", executable]);
               await installationToast.hide();
               onRefresh();
             } catch (error) {

@@ -8,10 +8,10 @@ const { homebrewPath } = getPreferenceValues<ExtensionPreferences>();
 export default function Updater() {
   const { pop } = useNavigation();
   const [versions, setVersions] = useState<Record<string, string>>(
-    isMac ? { "yt-dlp": "", ffmpeg: "" } : { "yt-dlp": "" },
+    isMac ? { "yt-dlp": "", ffmpeg: "", "gallery-dl": "" } : { "yt-dlp": "" },
   );
   const [outdated, setOutdated] = useState<Record<string, string>>(
-    isMac ? { "yt-dlp": "", ffmpeg: "" } : { "yt-dlp": "" },
+    isMac ? { "yt-dlp": "", ffmpeg: "", "gallery-dl": "" } : { "yt-dlp": "" },
   );
   const [upgradingMessage, setUpgradingMessage] = useState<string>("");
 
@@ -98,7 +98,7 @@ export default function Updater() {
 
 async function getVersions() {
   if (isMac) {
-    const { stdout: infoOutput } = await execa(homebrewPath, ["info", "--json=v2", "yt-dlp", "ffmpeg"]);
+    const { stdout: infoOutput } = await execa(homebrewPath, ["info", "--json=v2", "yt-dlp", "ffmpeg", "gallery-dl"]);
     const info = JSON.parse(infoOutput) as { formulae: { name: string; versions: { stable: string } }[] };
     const versions = Object.fromEntries(info.formulae.map(({ name, versions }) => [name, versions.stable]));
     return versions;
@@ -136,7 +136,7 @@ function parseWingetVersion(output: string): string {
 
 async function getOutdated() {
   if (isMac) {
-    const { stdout: outdatedOutput } = await execa(homebrewPath, ["outdated", "--json=v2", "yt-dlp", "ffmpeg"]);
+    const { stdout: outdatedOutput } = await execa(homebrewPath, ["outdated", "--json=v2", "yt-dlp", "ffmpeg", "gallery-dl"]);
     const outdated = JSON.parse(outdatedOutput) as { formulae: { name: string; current_version: string }[] };
     const versions = Object.fromEntries(outdated.formulae.map(({ name, current_version }) => [name, current_version]));
     return versions;
@@ -168,7 +168,7 @@ async function getOutdated() {
 
 async function upgrade() {
   if (isMac) {
-    return execa(homebrewPath, ["upgrade", "yt-dlp", "ffmpeg"]);
+    return execa(homebrewPath, ["upgrade", "yt-dlp", "ffmpeg", "gallery-dl"]);
   } else if (isWindows) {
     const wingetPath = await getWingetPath();
     await execa(wingetPath, [
