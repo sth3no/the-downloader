@@ -53,11 +53,119 @@
   "preferences": [
     {
       "name": "downloadPath",
-      "title": "Download Path",
+      "title": "Download Folder",
       "description": "Path to download video",
       "type": "directory",
       "default": "~/Downloads",
       "required": true
+    },
+    {
+      "name": "videoMediaType",
+      "title": "Video: Media Type",
+      "description": "Default for video URLs: download the full video, or extract audio only.",
+      "type": "dropdown",
+      "default": "video",
+      "required": false,
+      "data": [
+        { "title": "Video", "value": "video" },
+        { "title": "Audio Only", "value": "audio" }
+      ]
+    },
+    {
+      "name": "videoQuality",
+      "title": "Video: Quality",
+      "description": "Default video resolution. Ignored when Media Type is Audio Only.",
+      "type": "dropdown",
+      "default": "best",
+      "required": false,
+      "data": [
+        { "title": "Best Available", "value": "best" },
+        { "title": "1080p", "value": "1080" },
+        { "title": "720p", "value": "720" },
+        { "title": "480p", "value": "480" },
+        { "title": "Smallest File", "value": "smallest" }
+      ]
+    },
+    {
+      "name": "videoContainer",
+      "title": "Video: Container",
+      "description": "Default container for downloaded video. Ignored when Media Type is Audio Only.",
+      "type": "dropdown",
+      "default": "mp4",
+      "required": false,
+      "data": [
+        { "title": "MP4", "value": "mp4" },
+        { "title": "MKV", "value": "mkv" },
+        { "title": "WebM", "value": "webm" }
+      ]
+    },
+    {
+      "name": "audioFormat",
+      "title": "Video: Audio Format",
+      "description": "Default audio format when Media Type is Audio Only.",
+      "type": "dropdown",
+      "default": "mp3",
+      "required": false,
+      "data": [
+        { "title": "MP3", "value": "mp3" },
+        { "title": "M4A", "value": "m4a" },
+        { "title": "Opus", "value": "opus" }
+      ]
+    },
+    {
+      "name": "webpageSaveMode",
+      "title": "Webpage: Save Mode",
+      "description": "Default for saved webpages (used by a later release). Complete embeds everything; Lightweight strips JavaScript.",
+      "type": "dropdown",
+      "default": "complete",
+      "required": false,
+      "data": [
+        { "title": "Complete", "value": "complete" },
+        { "title": "Lightweight (no JavaScript)", "value": "lightweight" }
+      ]
+    },
+    {
+      "name": "autoLoadUrlFromClipboard",
+      "title": "Auto Load URL from Clipboard",
+      "description": "Automatically load the URL from the clipboard when the command is executed",
+      "type": "checkbox",
+      "label": "Enable",
+      "default": false,
+      "required": false
+    },
+    {
+      "name": "autoLoadUrlFromSelectedText",
+      "title": "Auto Load URL from Selected Text",
+      "description": "Automatically load the URL from the selected text when the command is executed",
+      "type": "checkbox",
+      "label": "Enable",
+      "default": false,
+      "required": false
+    },
+    {
+      "name": "enableBrowserExtensionSupport",
+      "title": "Enable Browser Extension Support",
+      "description": "Enable browser extension support for reading video URLs from the browser",
+      "type": "checkbox",
+      "label": "Enable",
+      "default": false,
+      "required": false
+    },
+    {
+      "name": "cookiesFromBrowser",
+      "title": "Gallery: Cookies from Browser",
+      "description": "Browser to read cookies from for login-gated galleries.",
+      "type": "dropdown",
+      "default": "",
+      "required": false,
+      "data": [
+        { "title": "None", "value": "" },
+        { "title": "Safari", "value": "safari" },
+        { "title": "Chrome", "value": "chrome" },
+        { "title": "Firefox", "value": "firefox" },
+        { "title": "Brave", "value": "brave" },
+        { "title": "Edge", "value": "edge" }
+      ]
     },
     {
       "name": "homebrewPath",
@@ -89,30 +197,10 @@
       "required": false
     },
     {
-      "name": "autoLoadUrlFromClipboard",
-      "title": "Auto Load URL from Clipboard",
-      "description": "Automatically load the URL from the clipboard when the command is executed",
-      "type": "checkbox",
-      "label": "Enable",
-      "default": false,
-      "required": false
-    },
-    {
-      "name": "autoLoadUrlFromSelectedText",
-      "title": "Auto Load URL from Selected Text",
-      "description": "Automatically load the URL from the selected text when the command is executed",
-      "type": "checkbox",
-      "label": "Enable",
-      "default": false,
-      "required": false
-    },
-    {
-      "name": "enableBrowserExtensionSupport",
-      "title": "Enable Browser Extension Support",
-      "description": "Enable browser extension support for reading video URLs from the browser",
-      "type": "checkbox",
-      "label": "Enable",
-      "default": false,
+      "name": "galleryDlPath",
+      "title": "gallery-dl Path",
+      "description": "Path to the gallery-dl executable. Run `which gallery-dl` to find it.",
+      "type": "textfield",
       "required": false
     },
     {
@@ -123,29 +211,6 @@
       "label": "Enable",
       "default": false,
       "required": false
-    },
-    {
-      "name": "galleryDlPath",
-      "title": "gallery-dl Path",
-      "description": "Path to the gallery-dl executable. Run `which gallery-dl` to find it.",
-      "type": "textfield",
-      "required": false
-    },
-    {
-      "name": "cookiesFromBrowser",
-      "title": "Cookies from Browser",
-      "description": "Browser to read cookies from for login-gated galleries.",
-      "type": "dropdown",
-      "default": "",
-      "required": false,
-      "data": [
-        { "title": "None", "value": "" },
-        { "title": "Safari", "value": "safari" },
-        { "title": "Chrome", "value": "chrome" },
-        { "title": "Firefox", "value": "firefox" },
-        { "title": "Brave", "value": "brave" },
-        { "title": "Edge", "value": "edge" }
-      ]
     }
   ],
   "ai": {
