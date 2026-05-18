@@ -21,4 +21,10 @@ describe("detectSource", () => {
   it("handles URLs without a protocol", () => {
     expect(detectSource("youtube.com/watch?v=abc")).toBe("video");
   });
+
+  it("routes Spotify links to spotify", () => {
+    expect(detectSource("https://open.spotify.com/track/abc")).toBe("spotify");
+    expect(detectSource("https://open.spotify.com/playlist/xyz")).toBe("spotify");
+    expect(detectSource("https://open.spotify.com/album/123")).toBe("spotify");
+  });
 });

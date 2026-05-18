@@ -15,6 +15,8 @@ const GALLERY_DOMAINS = [
   "instagram.com",
 ];
 
+const SPOTIFY_DOMAINS = ["open.spotify.com", "spotify.com"];
+
 function hostnameOf(url: string): string {
   try {
     const withProtocol = url.startsWith("http") ? url : `https://${url}`;
@@ -29,13 +31,14 @@ function matches(host: string, domains: string[]): boolean {
 }
 
 /**
- * Detect whether a URL is a video source (yt-dlp) or an image gallery
- * (gallery-dl). Unknown domains default to "video" — yt-dlp's generic
- * extractor covers the broadest range of sites.
+ * Detect whether a URL is a video source (yt-dlp), an image gallery
+ * (gallery-dl), or a Spotify link (spotDL). Unknown domains default to
+ * "video" — yt-dlp's generic extractor covers the broadest range of sites.
  */
 export function detectSource(url: string): SourceType {
   const host = hostnameOf(url);
   if (!host) return "video";
+  if (matches(host, SPOTIFY_DOMAINS)) return "spotify";
   if (matches(host, GALLERY_DOMAINS)) return "gallery";
   return "video";
 }
