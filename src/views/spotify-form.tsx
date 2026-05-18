@@ -1,41 +1,49 @@
 import { useState } from "react";
 import fs from "node:fs";
 import { Action, ActionPanel, Form, Icon, Toast, getPreferenceValues, open, showToast } from "@raycast/api";
-import { getGalleryDlPath } from "../utils.js";
-import { runGalleryDownload } from "../lib/gallerydl.js";
+import { getSpotdlPath, getffmpegPath } from "../utils.js";
+import { runSpotdlDownload } from "../lib/spotdl.js";
 import Installer from "./installer.js";
 import { SourceType } from "../types.js";
 
-type GalleryFormProps = {
+type SpotifyFormProps = {
   url: string;
   typeValue: SourceType;
   onTypeChange: (t: SourceType) => void;
   onUrlChange: (newUrl: string) => void;
 };
 
-export function GalleryForm({ url, typeValue, onTypeChange, onUrlChange }: GalleryFormProps) {
+export function SpotifyForm({ url, typeValue, onTypeChange, onUrlChange }: SpotifyFormProps) {
   const [refresh, setRefresh] = useState(0);
-  const { downloadPath, cookiesFromBrowser } = getPreferenceValues<ExtensionPreferences>();
-  const galleryDlPath = getGalleryDlPath();
+  const { downloadPath, spotifyAudioFormat } = getPreferenceValues<ExtensionPreferences>();
+  const spotdlPath = getSpotdlPath();
+  const ffmpegPath = getffmpegPath();
 
-  if (!fs.existsSync(galleryDlPath)) {
-    return <Installer executable="gallery-dl" onRefresh={() => setRefresh(refresh + 1)} />;
+  if (!fs.existsSync(spotdlPath)) {
+    return <Installer executable="spotdl" onRefresh={() => setRefresh(refresh + 1)} />;
+  }
+  if (!fs.existsSync(ffmpegPath)) {
+    return <Installer executable="ffmpeg" onRefresh={() => setRefresh(refresh + 1)} />;
   }
 
   async function onSubmit(values: { url: string; destination: string[] }) {
     const destination = values.destination[0] ?? downloadPath;
-    const toast = await showToast({ style: Toast.Style.Animated, title: "Downloading Gallery", message: "0 files" });
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: "Downloading from Spotify",
+      message: "0 tracks",
+    });
     try {
-      const { files } = await runGalleryDownload(
-        galleryDlPath,
-        { url: values.url, destination, cookiesFromBrowser: cookiesFromBrowser || undefined },
+      const { tracks } = await runSpotdlDownload(
+        spotdlPath,
+        { url: values.url, destination, format: spotifyAudioFormat, ffmpegPath },
         (p) => {
-          toast.message = `${p.files} files`;
+          toast.message = `${p.tracks} tracks`;
         },
       );
       toast.style = Toast.Style.Success;
-      toast.title = "Gallery Downloaded";
-      toast.message = `${files} files`;
+      toast.title = "Spotify Download Complete";
+      toast.message = `${tracks} tracks`;
       toast.primaryAction = { title: "Open Folder", onAction: () => open(destination) };
     } catch (error) {
       toast.style = Toast.Style.Failure;
@@ -48,7 +56,7 @@ export function GalleryForm({ url, typeValue, onTypeChange, onUrlChange }: Galle
     <Form
       actions={
         <ActionPanel>
-          <Action.SubmitForm icon={Icon.Download} title="Download Gallery" onSubmit={onSubmit} />
+          <Action.SubmitForm icon={Icon.Download} title="Download from Spotify" onSubmit={onSubmit} />
         </ActionPanel>
       }
     >
@@ -61,7 +69,7 @@ export function GalleryForm({ url, typeValue, onTypeChange, onUrlChange }: Galle
         id="url"
         title="URL"
         defaultValue={url}
-        placeholder="https://imgur.com/a/..."
+        placeholder="https://open.spotify.com/playlist/..."
         onChange={onUrlChange}
       />
       <Form.FilePicker

@@ -33,15 +33,18 @@ import { fetchVideoInfo, buildVideoDownloadArgs } from "../lib/ytdlp.js";
 import extractTranscript from "../transcript.js";
 import Installer from "./installer.js";
 import Updater from "./updater.js";
+import { SourceType } from "../types.js";
 
 const { downloadPath, forceIpv4 } = getPreferenceValues<ExtensionPreferences>();
 
 type VideoFormProps = {
   url: string;
+  typeValue: SourceType;
+  onTypeChange: (t: SourceType) => void;
   onUrlChange: (newUrl: string) => void;
 };
 
-export function VideoForm({ url, onUrlChange }: VideoFormProps) {
+export function VideoForm({ url, typeValue, onTypeChange, onUrlChange }: VideoFormProps) {
   const [error, setError] = useState(0);
   const [warning, setWarning] = useState("");
 
@@ -263,6 +266,11 @@ export function VideoForm({ url, onUrlChange }: VideoFormProps) {
         />
       }
     >
+      <Form.Dropdown id="sourceType" title="Type" value={typeValue} onChange={(v) => onTypeChange(v as SourceType)}>
+        <Form.Dropdown.Item value="video" title="Video / Audio" />
+        <Form.Dropdown.Item value="gallery" title="Gallery" />
+        <Form.Dropdown.Item value="spotify" title="Spotify" />
+      </Form.Dropdown>
       <Form.Description title="Title" text={video?.title ?? "Video not found"} />
       <Form.TextField
         {...itemProps.url}

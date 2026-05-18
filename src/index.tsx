@@ -5,6 +5,7 @@ import { SourceType } from "./types.js";
 import { isValidUrl } from "./utils.js";
 import { VideoForm } from "./views/video-form.js";
 import { GalleryForm } from "./views/gallery-form.js";
+import { SpotifyForm } from "./views/spotify-form.js";
 
 const { autoLoadUrlFromClipboard, autoLoadUrlFromSelectedText, enableBrowserExtensionSupport } =
   getPreferenceValues<ExtensionPreferences>();
@@ -50,11 +51,17 @@ export default function Command() {
     if (isValidUrl(next)) setType(detectSource(next));
   }
 
+  function handleTypeChange(next: SourceType) {
+    setType(next);
+  }
+
   if (!autoLoadDone) return <Form isLoading />;
 
-  return type === "gallery" ? (
-    <GalleryForm url={url} onUrlChange={handleUrlChange} />
-  ) : (
-    <VideoForm url={url} onUrlChange={handleUrlChange} />
-  );
+  if (type === "gallery") {
+    return <GalleryForm url={url} typeValue={type} onTypeChange={handleTypeChange} onUrlChange={handleUrlChange} />;
+  }
+  if (type === "spotify") {
+    return <SpotifyForm url={url} typeValue={type} onTypeChange={handleTypeChange} onUrlChange={handleUrlChange} />;
+  }
+  return <VideoForm url={url} onUrlChange={handleUrlChange} typeValue={type} onTypeChange={handleTypeChange} />;
 }
