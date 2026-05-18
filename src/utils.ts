@@ -1,4 +1,4 @@
-import { getPreferenceValues } from "@raycast/api";
+import { getPreferenceValues, environment } from "@raycast/api";
 import { formatDuration, intervalToDuration } from "date-fns";
 import validator from "validator";
 import { Format, Video } from "./types.js";
@@ -22,6 +22,7 @@ export const {
   ffmpegPath: ffmpegPathPreference,
   ffprobePath: ffprobePathPreference,
   galleryDlPath: galleryDlPathPreference,
+  spotDlPath: spotDlPathPreference,
 } = getPreferenceValues<ExtensionPreferences>();
 
 export async function getWingetPath() {
@@ -37,6 +38,7 @@ export const getytdlPath = () => resolveBinary("yt-dlp", ytdlPathPreference);
 export const getffmpegPath = () => resolveBinary("ffmpeg", ffmpegPathPreference);
 export const getffprobePath = () => resolveBinary("ffprobe", ffprobePathPreference);
 export const getGalleryDlPath = () => resolveBinary("gallery-dl", galleryDlPathPreference);
+export const getSpotdlPath = () => resolveBinary("spotdl", spotDlPathPreference, environment.supportPath);
 
 export type DownloadOptions = {
   url: string;
