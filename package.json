@@ -32,7 +32,7 @@
   "commands": [
     {
       "name": "index",
-      "title": "Download Video",
+      "title": "Download",
       "subtitle": "Download",
       "description": "Download video with parameters",
       "mode": "view"
