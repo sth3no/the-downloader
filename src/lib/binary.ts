@@ -1,12 +1,12 @@
 import * as fs from "node:fs";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 export const isWindows = process.platform === "win32";
 export const isMac = process.platform === "darwin";
 
 function whichWindows(name: string): string {
   try {
-    return execSync(`where ${name}`).toString().split("\n")[0].replace(/[\r\n]/g, "").trim();
+    return execFileSync("where", [name]).toString().split("\n")[0].replace(/[\r\n]/g, "").trim();
   } catch {
     return "";
   }

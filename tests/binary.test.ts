@@ -17,12 +17,11 @@ describe("resolveBinary", () => {
 
   it("falls back to a default path when the preference is missing", () => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
-    const result = resolveBinary("yt-dlp", "/missing/yt-dlp");
-    expect(result).toContain("yt-dlp");
-    expect(result).not.toBe("/missing/yt-dlp");
+    expect(resolveBinary("yt-dlp", "/missing/yt-dlp")).toBe("/opt/homebrew/bin/yt-dlp");
   });
 
   it("resolves a default path when no preference is given", () => {
-    expect(resolveBinary("gallery-dl")).toContain("gallery-dl");
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+    expect(resolveBinary("gallery-dl")).toBe("/opt/homebrew/bin/gallery-dl");
   });
 });
