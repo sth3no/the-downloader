@@ -12,7 +12,6 @@ const { autoLoadUrlFromClipboard, autoLoadUrlFromSelectedText, enableBrowserExte
 export default function Command() {
   const [url, setUrl] = useState("");
   const [type, setType] = useState<SourceType>("video");
-  const [typeTouched, setTypeTouched] = useState(false);
   const [autoLoadDone, setAutoLoadDone] = useState(false);
 
   useEffect(() => {
@@ -40,7 +39,7 @@ export default function Command() {
       }
       if (loaded) {
         setUrl(loaded);
-        if (!typeTouched) setType(detectSource(loaded));
+        setType(detectSource(loaded));
       }
       setAutoLoadDone(true);
     })();
@@ -48,19 +47,14 @@ export default function Command() {
 
   function handleUrlChange(next: string) {
     setUrl(next);
-    if (!typeTouched && isValidUrl(next)) setType(detectSource(next));
-  }
-
-  function handleTypeChange(next: SourceType) {
-    setTypeTouched(true);
-    setType(next);
+    if (isValidUrl(next)) setType(detectSource(next));
   }
 
   if (!autoLoadDone) return <Form isLoading />;
 
   return type === "gallery" ? (
-    <GalleryForm url={url} typeValue={type} onTypeChange={handleTypeChange} onUrlChange={handleUrlChange} />
+    <GalleryForm url={url} onUrlChange={handleUrlChange} />
   ) : (
-    <VideoForm url={url} onUrlChange={handleUrlChange} typeValue={type} onTypeChange={handleTypeChange} />
+    <VideoForm url={url} onUrlChange={handleUrlChange} />
   );
 }
