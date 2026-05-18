@@ -1,3 +1,5 @@
+export type SourceType = "video" | "gallery";
+
 export type Format = {
   format_id: string;
   vcodec: string;
