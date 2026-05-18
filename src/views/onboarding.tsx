@@ -1,14 +1,6 @@
 import { useMemo, useState } from "react";
 import fs from "node:fs";
-import {
-  Action,
-  ActionPanel,
-  Detail,
-  Icon,
-  Toast,
-  openExtensionPreferences,
-  showToast,
-} from "@raycast/api";
+import { Action, ActionPanel, Detail, Icon, Toast, openExtensionPreferences, showToast } from "@raycast/api";
 import { execa } from "execa";
 import {
   downloadPath,
@@ -44,6 +36,17 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
     .map((t) => `- ${t.installed ? "✅" : "❌"} ${t.name} — ${t.installed ? "installed" : "not found"}`)
     .join("\n");
 
+  const closing =
+    missing.length === 0
+      ? `## You're set
+
+Downloads are saved to \`${downloadPath}\`. Quality and format defaults live in extension settings — open them to adjust, or keep the defaults.
+
+Choose **Finish Setup** when you're ready.`
+      : `## Next steps
+
+Press **Install Missing Tools** to install the missing tools automatically, or set their paths yourself in **Open Settings**. When everything shows ✅, choose **Finish Setup**.`;
+
   const markdown = `# Welcome to The Downloader
 
 Download video, audio, image galleries, and YouTube transcripts — all from one command. Webpage saving arrives in a later release.
@@ -54,11 +57,7 @@ The Downloader drives the yt-dlp and gallery-dl command-line tools:
 
 ${checklist}
 
-## You're set
-
-Downloads are saved to \`${downloadPath}\`. Quality and format defaults live in extension settings — open them to adjust, or keep the defaults.
-
-Choose **Finish Setup** when you're ready.
+${closing}
 `;
 
   async function installMissing() {
@@ -82,6 +81,7 @@ Choose **Finish Setup** when you're ready.
       toast.title = "Tools installed";
       setRefreshKey((k) => k + 1);
     } catch (error) {
+      console.error("[onboarding] installMissing failed:", error);
       toast.style = Toast.Style.Failure;
       toast.title = "Installation failed";
       toast.message = error instanceof Error ? error.message : "Unknown error";
