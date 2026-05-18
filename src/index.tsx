@@ -17,7 +17,6 @@ import {
 } from "@raycast/api";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, usePromise } from "@raycast/utils";
-import { execa } from "execa";
 import {
   DownloadOptions,
   getffmpegPath,
@@ -32,8 +31,7 @@ import {
   parseHHMM,
   sanitizeVideoTitle,
 } from "./utils.js";
-import { Video } from "./types.js";
-import { MP3_FORMAT_ID } from "./utils.js";
+import { fetchVideoInfo, buildVideoDownloadArgs } from "./lib/ytdlp.js";
 import Installer from "./views/installer.js";
 import Updater from "./views/updater.js";
 
@@ -59,19 +57,8 @@ export default function DownloadVideo() {
     },
     onSubmit: async (values) => {
       if (!values.format) return;
-      const options = ["-o", path.join(downloadPath, `${video?.title || "video"} (%(id)s).%(ext)s`)];
-      const [downloadFormat, recodeFormat] = values.format.split("#");
-
-      options.push("--ffmpeg-location", ffmpegPath);
-
-      if (values.format === MP3_FORMAT_ID) {
-        options.push("--extract-audio");
-        options.push("--audio-format", "mp3");
-        options.push("--audio-quality", "0");
-      } else {
-        options.push("--format", downloadFormat);
-        options.push("--recode-video", recodeFormat);
-      }
+      const outputTemplate = path.join(downloadPath, `${video?.title || "video"} (%(id)s).%(ext)s`);
+      const options = buildVideoDownloadArgs({ url: values.url, format: values.format, outputTemplate, ffmpegPath });
 
       const toast = await showToast({
         title: "Downloading Video",
@@ -79,10 +66,7 @@ export default function DownloadVideo() {
         message: "0%",
       });
 
-      options.push("--progress");
-      options.push("--print", "after_move:filepath");
-
-      const downloadProcess = spawn(ytdlPath, [...options, values.url], {
+      const downloadProcess = spawn(ytdlPath, options, {
         env: { ...globalThis.process.env, PYTHONUNBUFFERED: "1" },
       });
 
@@ -182,23 +166,7 @@ export default function DownloadVideo() {
       if (!url) return;
       if (!isValidUrl(url)) return;
 
-      const result = await execa(
-        ytdlPath,
-        [
-          forceIpv4 ? "--force-ipv4" : "",
-          "--no-playlist",
-          "--dump-json",
-          "--format-sort=resolution,ext,tbr",
-          url,
-        ].filter(Boolean),
-        {
-          env: {
-            ...process.env,
-            PYTHONUNBUFFERED: "1",
-          },
-        },
-      );
-      const data = JSON.parse(result.stdout) as Video;
+      const data = await fetchVideoInfo(ytdlPath, url, forceIpv4);
 
       return { ...data, title: sanitizeVideoTitle(data.title) };
     },

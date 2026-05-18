@@ -11,7 +11,7 @@ import {
 } from "../utils.js";
 import fs from "node:fs";
 import path from "node:path";
-import { Video } from "../types.js";
+import { fetchVideoInfo } from "../lib/ytdlp.js";
 
 type Input = {
   /**
@@ -37,14 +37,7 @@ export default async function tool(input: Input) {
   }
 
   // Get video info and available formats
-  const videoInfo = await execa(
-    ytdlPath,
-    [forceIpv4 ? "--force-ipv4" : "", "--dump-json", "--format-sort=resolution,ext,tbr", input.url].filter((x) =>
-      Boolean(x),
-    ),
-  );
-
-  const video = JSON.parse(videoInfo.stdout) as Video;
+  const video = await fetchVideoInfo(ytdlPath, input.url, forceIpv4);
 
   // Check if it's a live stream
   if (video.live_status !== "not_live" && video.live_status !== undefined) {
