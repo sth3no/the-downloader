@@ -35,7 +35,12 @@ import Updater from "./updater.js";
 
 const { downloadPath, forceIpv4 } = getPreferenceValues<ExtensionPreferences>();
 
-export function VideoForm({ url, onUrlChange }: { url: string; onUrlChange: (u: string) => void }) {
+type VideoFormProps = {
+  url: string;
+  onUrlChange: (newUrl: string) => void;
+};
+
+export function VideoForm({ url, onUrlChange }: VideoFormProps) {
   const [error, setError] = useState(0);
   const [warning, setWarning] = useState("");
 
