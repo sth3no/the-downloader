@@ -1,6 +1,6 @@
+import { spawn } from "node:child_process";
 import { execa } from "execa";
 import { Video } from "../types.js";
-import { MP3_FORMAT_ID } from "../utils.js";
 
 /** Fetch yt-dlp metadata for a URL via --dump-json. `denoPath`, when given, points yt-dlp at its JS runtime. */
 export async function fetchVideoInfo(
@@ -33,18 +33,67 @@ export type VideoDownloadArgs = {
   denoPath?: string;
 };
 
-/** Build yt-dlp CLI args for a media download. */
+/**
+ * Build yt-dlp CLI args for a media download. `format` is a `"<download>#<recode>"`
+ * pair: when the download half is `bestaudio` the audio is extracted to the recode
+ * format, otherwise the video is downloaded and recoded to the recode container.
+ */
 export function buildVideoDownloadArgs(a: VideoDownloadArgs): string[] {
   const args = ["-o", a.outputTemplate, "--ffmpeg-location", a.ffmpegPath];
   if (a.denoPath) {
     args.push("--js-runtimes", `deno:${a.denoPath}`);
   }
   const [downloadFormat, recodeFormat] = a.format.split("#");
-  if (a.format === MP3_FORMAT_ID) {
-    args.push("--extract-audio", "--audio-format", "mp3", "--audio-quality", "0");
+  if (downloadFormat === "bestaudio") {
+    args.push("--extract-audio", "--audio-format", recodeFormat, "--audio-quality", "0");
   } else {
     args.push("--format", downloadFormat, "--recode-video", recodeFormat);
   }
   args.push("--progress", "--print", "after_move:filepath", a.url);
   return args;
+}
+
+export type VideoDownloadResult = { filePath: string };
+
+/**
+ * Run yt-dlp for a media download. `onProgress` receives the download percentage
+ * as yt-dlp reports it. Resolves with the downloaded file path on a zero exit;
+ * rejects with the stderr text on a non-zero exit. Progress and the
+ * `after_move:filepath` line are read from stdout, matching what `video-form.tsx`
+ * parses today.
+ */
+export function runVideoDownload(
+  binaryPath: string,
+  options: VideoDownloadArgs,
+  onProgress: (percent: number) => void,
+): Promise<VideoDownloadResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(binaryPath, buildVideoDownloadArgs(options), {
+      env: { ...process.env, PYTHONUNBUFFERED: "1" },
+    });
+    let filePath = "";
+    let stderr = "";
+    child.stdout.on("data", (data: Buffer) => {
+      for (const line of data.toString().split("\n")) {
+        const progress = /\[download\]\s+(\d+(?:\.\d+)?)%/.exec(line);
+        if (progress) {
+          onProgress(Number(progress[1]));
+        } else {
+          const trimmed = line.trim();
+          if (trimmed.startsWith("/") || /^[a-zA-Z]:\\/.test(trimmed)) {
+            filePath = trimmed;
+          }
+        }
+      }
+    });
+    child.stderr.on("data", (data: Buffer) => (stderr += data.toString()));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({ filePath });
+      } else {
+        reject(new Error(stderr.trim() || `yt-dlp exited with code ${code}`));
+      }
+    });
+  });
 }
