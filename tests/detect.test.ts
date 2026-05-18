@@ -26,5 +26,6 @@ describe("detectSource", () => {
     expect(detectSource("https://open.spotify.com/track/abc")).toBe("spotify");
     expect(detectSource("https://open.spotify.com/playlist/xyz")).toBe("spotify");
     expect(detectSource("https://open.spotify.com/album/123")).toBe("spotify");
+    expect(detectSource("https://accounts.spotify.com/login")).toBe("video");
   });
 });

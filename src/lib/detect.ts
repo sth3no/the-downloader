@@ -15,7 +15,7 @@ const GALLERY_DOMAINS = [
   "instagram.com",
 ];
 
-const SPOTIFY_DOMAINS = ["open.spotify.com", "spotify.com"];
+const SPOTIFY_DOMAINS = ["open.spotify.com"];
 
 function hostnameOf(url: string): string {
   try {
