@@ -251,6 +251,11 @@ export function VideoForm({ url, onUrlChange, typeValue, onTypeChange }: VideoFo
           </ActionPanel.Section>
           <ActionPanel.Section>
             <Action.Push icon={Icon.Hammer} title="Update Libraries" target={<Updater />} />
+            <Action.OpenInBrowser
+              icon={Icon.Info}
+              title="About This Extension"
+              url="https://github.com/sth3no/the-downloader/blob/main/ABOUT.md"
+            />
           </ActionPanel.Section>
         </ActionPanel>
       }
