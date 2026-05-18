@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-// Mock @raycast/api before importing config
-vi.mock("@raycast/api", () => ({
-  getPreferenceValues: vi.fn(() => ({})),
-}));
+vi.mock("@raycast/api", () => ({ getPreferenceValues: () => ({}) }));
 
 import { videoFormatSelector } from "../src/lib/config";
 
