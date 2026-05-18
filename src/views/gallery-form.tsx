@@ -10,9 +10,10 @@ type GalleryFormProps = {
   url: string;
   typeValue: SourceType;
   onTypeChange: (t: SourceType) => void;
+  onUrlChange: (newUrl: string) => void;
 };
 
-export function GalleryForm({ url, typeValue, onTypeChange }: GalleryFormProps) {
+export function GalleryForm({ url, typeValue, onTypeChange, onUrlChange }: GalleryFormProps) {
   const [refresh, setRefresh] = useState(0);
   const { downloadPath, cookiesFromBrowser } = getPreferenceValues<ExtensionPreferences>();
   const galleryDlPath = getGalleryDlPath();
@@ -55,7 +56,7 @@ export function GalleryForm({ url, typeValue, onTypeChange }: GalleryFormProps) 
         <Form.Dropdown.Item value="video" title="Video / Audio" />
         <Form.Dropdown.Item value="gallery" title="Gallery" />
       </Form.Dropdown>
-      <Form.TextField id="url" title="URL" defaultValue={url} placeholder="https://imgur.com/a/..." />
+      <Form.TextField id="url" title="URL" defaultValue={url} placeholder="https://imgur.com/a/..." onChange={onUrlChange} />
       <Form.FilePicker
         id="destination"
         title="Destination"

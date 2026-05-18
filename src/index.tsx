@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BrowserExtension, Clipboard, getPreferenceValues, getSelectedText } from "@raycast/api";
+import { BrowserExtension, Clipboard, Form, getPreferenceValues, getSelectedText } from "@raycast/api";
 import { detectSource } from "./lib/detect.js";
 import { SourceType } from "./types.js";
 import { isValidUrl } from "./utils.js";
@@ -13,6 +13,7 @@ export default function Command() {
   const [url, setUrl] = useState("");
   const [type, setType] = useState<SourceType>("video");
   const [typeTouched, setTypeTouched] = useState(false);
+  const [autoLoadDone, setAutoLoadDone] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -41,6 +42,7 @@ export default function Command() {
         setUrl(loaded);
         if (!typeTouched) setType(detectSource(loaded));
       }
+      setAutoLoadDone(true);
     })();
   }, []);
 
@@ -54,8 +56,10 @@ export default function Command() {
     setType(next);
   }
 
+  if (!autoLoadDone) return <Form isLoading />;
+
   return type === "gallery" ? (
-    <GalleryForm url={url} typeValue={type} onTypeChange={handleTypeChange} />
+    <GalleryForm url={url} typeValue={type} onTypeChange={handleTypeChange} onUrlChange={handleUrlChange} />
   ) : (
     <VideoForm url={url} onUrlChange={handleUrlChange} typeValue={type} onTypeChange={handleTypeChange} />
   );
