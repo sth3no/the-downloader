@@ -61,6 +61,7 @@ export async function downloadSpotdl(supportDir: string): Promise<string> {
 
   const finalPath = path.join(supportDir, isWindows ? "spotdl.exe" : "spotdl");
   const tempPath = `${finalPath}.download`;
+  fs.mkdirSync(supportDir, { recursive: true });
   fs.writeFileSync(tempPath, bytes);
   fs.renameSync(tempPath, finalPath);
 
