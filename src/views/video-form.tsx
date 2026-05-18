@@ -31,6 +31,7 @@ import {
 } from "../utils.js";
 import { SourceType } from "../types.js";
 import { fetchVideoInfo, buildVideoDownloadArgs } from "../lib/ytdlp.js";
+import extractTranscript from "../transcript.js";
 import Installer from "./installer.js";
 import Updater from "./updater.js";
 
@@ -57,6 +58,24 @@ export function VideoForm({ url, onUrlChange, typeValue, onTypeChange }: VideoFo
     },
     onSubmit: async (values) => {
       if (!values.format) return;
+      if (values.format === "transcript") {
+        const toast = await showToast({ style: Toast.Style.Animated, title: "Extracting Transcript" });
+        try {
+          const { transcript, title } = await extractTranscript(values.url);
+          const filePath = path.join(downloadPath, `${title}.txt`);
+          fs.writeFileSync(filePath, transcript, "utf-8");
+          toast.style = Toast.Style.Success;
+          toast.title = "Transcript Saved";
+          toast.message = title;
+          toast.primaryAction = { title: "Open", onAction: () => open(filePath) };
+          toast.secondaryAction = { title: "Copy Transcript", onAction: () => Clipboard.copy(transcript) };
+        } catch (error) {
+          toast.style = Toast.Style.Failure;
+          toast.title = "No Transcript Available";
+          toast.message = error instanceof Error ? error.message : "Unknown error";
+        }
+        return;
+      }
       const outputTemplate = path.join(downloadPath, `${video?.title || "video"} (%(id)s).%(ext)s`);
       const options = buildVideoDownloadArgs({ url: values.url, format: values.format, outputTemplate, ffmpegPath });
 
@@ -271,6 +290,9 @@ export function VideoForm({ url, onUrlChange, typeValue, onTypeChange }: VideoFo
               ))}
             </Form.Dropdown.Section>
           ))}
+          <Form.Dropdown.Section title="Transcript">
+            <Form.Dropdown.Item value="transcript" title="Transcript (.txt)" />
+          </Form.Dropdown.Section>
         </Form.Dropdown>
       )}
     </Form>
