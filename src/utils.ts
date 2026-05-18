@@ -2,11 +2,10 @@ import { getPreferenceValues } from "@raycast/api";
 import { formatDuration, intervalToDuration } from "date-fns";
 import validator from "validator";
 import { Format, Video } from "./types.js";
-import { existsSync } from "fs";
 import { execSync } from "child_process";
+import { resolveBinary, isWindows, isMac } from "./lib/binary.js";
 
-export const isWindows = process.platform === "win32";
-export const isMac = process.platform === "darwin";
+export { isWindows, isMac };
 
 function sanitizeWindowsPath(path: string): string {
   return path.replace(/\r/g, "").replace(/\n/g, "").trim();
@@ -33,56 +32,10 @@ export async function getWingetPath() {
   }
 }
 
-export const getytdlPath = () => {
-  const cleanedYtdlPath = isWindows ? sanitizeWindowsPath(ytdlPathPreference || "") : ytdlPathPreference;
-  if (cleanedYtdlPath && existsSync(cleanedYtdlPath)) return cleanedYtdlPath;
-
-  try {
-    const defaultPath = isMac
-      ? "/opt/homebrew/bin/yt-dlp"
-      : isWindows
-        ? sanitizeWindowsPath(execSync("where yt-dlp").toString().trim().split("\n")[0])
-        : "/usr/bin/yt-dlp";
-
-    return defaultPath;
-  } catch {
-    return "";
-  }
-};
-
-export const getffmpegPath = () => {
-  const cleanedFfmpegPath = isWindows ? sanitizeWindowsPath(ffmpegPathPreference || "") : ffmpegPathPreference;
-  if (cleanedFfmpegPath && existsSync(cleanedFfmpegPath)) return cleanedFfmpegPath;
-
-  try {
-    const defaultPath = isMac
-      ? "/opt/homebrew/bin/ffmpeg"
-      : isWindows
-        ? sanitizeWindowsPath(execSync("where ffmpeg").toString().trim().split("\n")[0])
-        : "/usr/bin/ffmpeg";
-
-    return defaultPath;
-  } catch {
-    return "";
-  }
-};
-
-export const getffprobePath = () => {
-  const cleanedFfprobePath = isWindows ? sanitizeWindowsPath(ffprobePathPreference || "") : ffprobePathPreference;
-
-  if (cleanedFfprobePath && existsSync(cleanedFfprobePath)) return cleanedFfprobePath;
-
-  try {
-    const defaultPath = isMac
-      ? "/opt/homebrew/bin/ffprobe"
-      : isWindows
-        ? sanitizeWindowsPath(execSync("where ffprobe").toString().trim().split("\n")[0])
-        : "/usr/bin/ffprobe";
-    return defaultPath;
-  } catch {
-    return "";
-  }
-};
+export const getytdlPath = () => resolveBinary("yt-dlp", ytdlPathPreference);
+export const getffmpegPath = () => resolveBinary("ffmpeg", ffmpegPathPreference);
+export const getffprobePath = () => resolveBinary("ffprobe", ffprobePathPreference);
+export const getGalleryDlPath = () => resolveBinary("gallery-dl");
 
 export type DownloadOptions = {
   url: string;
