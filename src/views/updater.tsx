@@ -1,17 +1,19 @@
 import { useEffect, useState } from "react";
-import { Action, ActionPanel, Clipboard, Detail, Icon, Toast, getPreferenceValues, useNavigation } from "@raycast/api";
+import fs from "node:fs";
+import { Action, ActionPanel, Clipboard, Detail, Icon, Toast, environment, getPreferenceValues, useNavigation } from "@raycast/api";
 import { execa } from "execa";
-import { getWingetPath, isMac, isWindows } from "../utils.js";
+import { getSpotdlPath, getWingetPath, isMac, isWindows } from "../utils.js";
+import { downloadSpotdl, getInstalledVersion, getLatestRelease } from "../lib/managed-binary.js";
 
 const { homebrewPath } = getPreferenceValues<ExtensionPreferences>();
 
 export default function Updater() {
   const { pop } = useNavigation();
   const [versions, setVersions] = useState<Record<string, string>>(
-    isMac ? { "yt-dlp": "", ffmpeg: "", "gallery-dl": "" } : { "yt-dlp": "" },
+    isMac ? { "yt-dlp": "", ffmpeg: "", "gallery-dl": "", spotdl: "" } : { "yt-dlp": "", spotdl: "" },
   );
   const [outdated, setOutdated] = useState<Record<string, string>>(
-    isMac ? { "yt-dlp": "", ffmpeg: "", "gallery-dl": "" } : { "yt-dlp": "" },
+    isMac ? { "yt-dlp": "", ffmpeg: "", "gallery-dl": "", spotdl: "" } : { "yt-dlp": "", spotdl: "" },
   );
   const [upgradingMessage, setUpgradingMessage] = useState<string>("");
 
@@ -49,10 +51,15 @@ export default function Updater() {
       markdown={[
         "## Versions",
         Object.entries(versions)
-          .map(
-            ([cli, version]) =>
-              `${cli}: ${version === "" ? "Checking..." : version} ${outdated[cli] ? `(outdated: ${outdated[cli]})` : "(up to date)"}`,
-          )
+          .map(([cli, version]) => {
+            const status =
+              version === "not installed"
+                ? ""
+                : outdated[cli]
+                  ? `(outdated: ${outdated[cli]})`
+                  : "(up to date)";
+            return `${cli}: ${version === "" ? "Checking..." : version} ${status}`;
+          })
           .join("\n\n"),
         upgradingMessage,
       ]
@@ -96,29 +103,35 @@ export default function Updater() {
   );
 }
 
+async function getSpotdlVersion(): Promise<string> {
+  const spotdlPath = getSpotdlPath();
+  if (!fs.existsSync(spotdlPath)) return "not installed";
+  try {
+    return await getInstalledVersion(spotdlPath);
+  } catch {
+    return "unknown";
+  }
+}
+
 async function getVersions() {
+  const versions: Record<string, string> = {};
   if (isMac) {
     const { stdout: infoOutput } = await execa(homebrewPath, ["info", "--json=v2", "yt-dlp", "ffmpeg", "gallery-dl"]);
     const info = JSON.parse(infoOutput) as { formulae: { name: string; versions: { stable: string } }[] };
-    const versions = Object.fromEntries(info.formulae.map(({ name, versions }) => [name, versions.stable]));
-    return versions;
-  } else if (isWindows) {
-    const wingetPath = await getWingetPath();
-
-    let ytdlpVersion = "";
-
-    try {
-      const { stdout: ytdlpOutput } = await execa(wingetPath, ["list", "--id", "yt-dlp.yt-dlp", "--exact"]);
-      ytdlpVersion = parseWingetVersion(ytdlpOutput);
-    } catch {
-      // Ignore errors
+    for (const { name, versions: formulaVersions } of info.formulae) {
+      versions[name] = formulaVersions.stable;
     }
-
-    return {
-      "yt-dlp": ytdlpVersion,
-    };
+  } else if (isWindows) {
+    try {
+      const wingetPath = await getWingetPath();
+      const { stdout: ytdlpOutput } = await execa(wingetPath, ["list", "--id", "yt-dlp.yt-dlp", "--exact"]);
+      versions["yt-dlp"] = parseWingetVersion(ytdlpOutput);
+    } catch {
+      versions["yt-dlp"] = "";
+    }
   }
-  return { "yt-dlp": "" };
+  versions["spotdl"] = await getSpotdlVersion();
+  return versions;
 }
 
 function parseWingetVersion(output: string): string {
@@ -135,6 +148,7 @@ function parseWingetVersion(output: string): string {
 }
 
 async function getOutdated() {
+  const outdated: Record<string, string> = {};
   if (isMac) {
     const { stdout: outdatedOutput } = await execa(homebrewPath, [
       "outdated",
@@ -143,38 +157,44 @@ async function getOutdated() {
       "ffmpeg",
       "gallery-dl",
     ]);
-    const outdated = JSON.parse(outdatedOutput) as { formulae: { name: string; current_version: string }[] };
-    const versions = Object.fromEntries(outdated.formulae.map(({ name, current_version }) => [name, current_version]));
-    return versions;
+    const info = JSON.parse(outdatedOutput) as { formulae: { name: string; current_version: string }[] };
+    for (const { name, current_version } of info.formulae) {
+      outdated[name] = current_version;
+    }
   } else if (isWindows) {
-    const wingetPath = await getWingetPath();
-
     try {
+      const wingetPath = await getWingetPath();
       const { stdout: upgradeOutput } = await execa(wingetPath, ["upgrade"]);
-      const lines = upgradeOutput.split("\n");
-
-      const outdatedVersions: Record<string, string> = {};
-
-      for (const line of lines) {
+      for (const line of upgradeOutput.split("\n")) {
         if (line.includes("yt-dlp.yt-dlp")) {
           const versionMatch = line.match(/(\d+\.)+\d+/g);
           if (versionMatch && versionMatch.length >= 2) {
-            outdatedVersions["yt-dlp"] = versionMatch[1];
+            outdated["yt-dlp"] = versionMatch[1];
           }
         }
       }
-
-      return outdatedVersions;
     } catch {
-      return {};
+      // Ignore errors
     }
   }
-  return {};
+  try {
+    const spotdlPath = getSpotdlPath();
+    if (fs.existsSync(spotdlPath)) {
+      const installed = await getInstalledVersion(spotdlPath);
+      const latest = (await getLatestRelease()).version;
+      if (installed && latest && installed !== latest) {
+        outdated["spotdl"] = latest;
+      }
+    }
+  } catch {
+    // Ignore network / version-read errors — treat spotdl as up to date.
+  }
+  return outdated;
 }
 
 async function upgrade() {
   if (isMac) {
-    return execa(homebrewPath, ["upgrade", "yt-dlp", "ffmpeg", "gallery-dl"]);
+    await execa(homebrewPath, ["upgrade", "yt-dlp", "ffmpeg", "gallery-dl"]);
   } else if (isWindows) {
     const wingetPath = await getWingetPath();
     await execa(wingetPath, [
@@ -184,6 +204,14 @@ async function upgrade() {
       "--accept-source-agreements",
       "--accept-package-agreements",
     ]);
+  }
+  const spotdlPath = getSpotdlPath();
+  if (fs.existsSync(spotdlPath)) {
+    const installed = await getInstalledVersion(spotdlPath);
+    const latest = (await getLatestRelease()).version;
+    if (installed !== latest) {
+      await downloadSpotdl(environment.supportPath);
+    }
   }
 }
 
