@@ -1,8 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-
-vi.mock("@raycast/api", () => ({ getPreferenceValues: () => ({}) }));
-
-import { videoFormatSelector } from "../src/lib/config";
+import { describe, it, expect } from "vitest";
+import { videoFormatSelector } from "../src/lib/video-format";
 
 describe("videoFormatSelector", () => {
   it("maps 'best' to an uncapped selector", () => {
