@@ -51,17 +51,13 @@ export default function Command() {
     if (isValidUrl(next)) setType(detectSource(next));
   }
 
-  function handleTypeChange(next: SourceType) {
-    setType(next);
-  }
-
   if (!autoLoadDone) return <Form isLoading />;
 
   if (type === "gallery") {
-    return <GalleryForm url={url} typeValue={type} onTypeChange={handleTypeChange} onUrlChange={handleUrlChange} />;
+    return <GalleryForm url={url} onUrlChange={handleUrlChange} />;
   }
   if (type === "spotify") {
-    return <SpotifyForm url={url} typeValue={type} onTypeChange={handleTypeChange} onUrlChange={handleUrlChange} />;
+    return <SpotifyForm url={url} onUrlChange={handleUrlChange} />;
   }
-  return <VideoForm url={url} onUrlChange={handleUrlChange} typeValue={type} onTypeChange={handleTypeChange} />;
+  return <VideoForm url={url} onUrlChange={handleUrlChange} />;
 }

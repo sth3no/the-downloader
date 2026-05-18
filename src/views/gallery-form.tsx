@@ -4,16 +4,13 @@ import { Action, ActionPanel, Form, Icon, Toast, getPreferenceValues, open, show
 import { getGalleryDlPath } from "../utils.js";
 import { runGalleryDownload } from "../lib/gallerydl.js";
 import Installer from "./installer.js";
-import { SourceType } from "../types.js";
 
 type GalleryFormProps = {
   url: string;
-  typeValue: SourceType;
-  onTypeChange: (t: SourceType) => void;
   onUrlChange: (newUrl: string) => void;
 };
 
-export function GalleryForm({ url, typeValue, onTypeChange, onUrlChange }: GalleryFormProps) {
+export function GalleryForm({ url, onUrlChange }: GalleryFormProps) {
   const [refresh, setRefresh] = useState(0);
   const { downloadPath, cookiesFromBrowser } = getPreferenceValues<ExtensionPreferences>();
   const galleryDlPath = getGalleryDlPath();
@@ -52,11 +49,6 @@ export function GalleryForm({ url, typeValue, onTypeChange, onUrlChange }: Galle
         </ActionPanel>
       }
     >
-      <Form.Dropdown id="sourceType" title="Type" value={typeValue} onChange={(v) => onTypeChange(v as SourceType)}>
-        <Form.Dropdown.Item value="video" title="Video / Audio" />
-        <Form.Dropdown.Item value="gallery" title="Gallery" />
-        <Form.Dropdown.Item value="spotify" title="Spotify" />
-      </Form.Dropdown>
       <Form.TextField
         id="url"
         title="URL"

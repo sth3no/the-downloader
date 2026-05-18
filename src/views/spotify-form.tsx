@@ -4,16 +4,13 @@ import { Action, ActionPanel, Form, Icon, Toast, getPreferenceValues, open, show
 import { getSpotdlPath, getffmpegPath } from "../utils.js";
 import { runSpotdlDownload } from "../lib/spotdl.js";
 import Installer from "./installer.js";
-import { SourceType } from "../types.js";
 
 type SpotifyFormProps = {
   url: string;
-  typeValue: SourceType;
-  onTypeChange: (t: SourceType) => void;
   onUrlChange: (newUrl: string) => void;
 };
 
-export function SpotifyForm({ url, typeValue, onTypeChange, onUrlChange }: SpotifyFormProps) {
+export function SpotifyForm({ url, onUrlChange }: SpotifyFormProps) {
   const [refresh, setRefresh] = useState(0);
   const { downloadPath, spotifyAudioFormat } = getPreferenceValues<ExtensionPreferences>();
   const spotdlPath = getSpotdlPath();
@@ -60,11 +57,6 @@ export function SpotifyForm({ url, typeValue, onTypeChange, onUrlChange }: Spoti
         </ActionPanel>
       }
     >
-      <Form.Dropdown id="sourceType" title="Type" value={typeValue} onChange={(v) => onTypeChange(v as SourceType)}>
-        <Form.Dropdown.Item value="video" title="Video / Audio" />
-        <Form.Dropdown.Item value="gallery" title="Gallery" />
-        <Form.Dropdown.Item value="spotify" title="Spotify" />
-      </Form.Dropdown>
       <Form.TextField
         id="url"
         title="URL"
