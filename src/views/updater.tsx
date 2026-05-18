@@ -58,7 +58,7 @@ export default function Updater() {
                 : outdated[cli]
                   ? `(outdated: ${outdated[cli]})`
                   : "(up to date)";
-            return `${cli}: ${version === "" ? "Checking..." : version} ${status}`;
+            return `${cli}: ${version === "" ? "Checking..." : version}${status ? ` ${status}` : ""}`;
           })
           .join("\n\n"),
         upgradingMessage,
@@ -205,13 +205,17 @@ async function upgrade() {
       "--accept-package-agreements",
     ]);
   }
-  const spotdlPath = getSpotdlPath();
-  if (fs.existsSync(spotdlPath)) {
-    const installed = await getInstalledVersion(spotdlPath);
-    const latest = (await getLatestRelease()).version;
-    if (installed !== latest) {
-      await downloadSpotdl(environment.supportPath);
+  try {
+    const spotdlPath = getSpotdlPath();
+    if (fs.existsSync(spotdlPath)) {
+      const installed = await getInstalledVersion(spotdlPath);
+      const latest = (await getLatestRelease()).version;
+      if (installed !== latest) {
+        await downloadSpotdl(environment.supportPath);
+      }
     }
+  } catch {
+    // Ignore network / version-read errors — spotdl upgrade skipped.
   }
 }
 
