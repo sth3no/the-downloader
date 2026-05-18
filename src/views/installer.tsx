@@ -6,18 +6,21 @@ import {
   Detail,
   Icon,
   Toast,
+  environment,
   open,
   openExtensionPreferences,
   showToast,
 } from "@raycast/api";
 import { ExecaError, execa } from "execa";
 import { getWingetPath, homebrewPath, isMac, isWindows } from "../utils.js";
+import { HOMEBREW_FORMULAE, isManagedTool } from "../lib/tools.js";
+import { downloadSpotdl } from "../lib/managed-binary.js";
 
 const macOSInstallGuide = (executable: string) => `
 # 🚨 Error: \`${executable}\` is not installed
 This extension depends on a command-line utility that is not detected on your system. You must install it continue.
 
-If you have homebrew installed, simply press **⏎** to have this extension install it for you. Since \`${executable}\` is a heavy library, 
+If you have homebrew installed, simply press **⏎** to have this extension install it for you. Since \`${executable}\` is a heavy library,
 **it can take up to 2 minutes to install**.
 
 **Please do not close Raycast while the installation is in progress.**
@@ -27,7 +30,7 @@ To install homebrew, visit [this link](https://brew.sh)
 
 const windowsInstallGuide = (executable: string) => `# 🚨 Error: \`${executable}\` is not installed
 
-Please press **⏎** to have this extension install it for you. Since these are heavy libraries, **it can take up to 2 minutes to install**. 
+Please press **⏎** to have this extension install it for you. Since these are heavy libraries, **it can take up to 2 minutes to install**.
 
 **Note:** \`yt-dlp\` bundles \`ffmpeg\` and \`ffprobe\` binaries.
 
@@ -40,12 +43,72 @@ winget install --id=yt-dlp.yt-dlp -e
 \`\`\`
 `;
 
+const managedInstallGuide = (executable: string) => `
+# 🚨 Error: \`${executable}\` is not installed
+
+This extension can download \`${executable}\` for you — a one-time, self-contained binary (~40 MB). No Homebrew or Python required.
+
+Press **⏎** to download it now. **Please do not close Raycast while the download is in progress.**
+`;
+
 export default function Installer({ executable, onRefresh }: { executable: string; onRefresh: () => void }) {
+  if (isManagedTool(executable)) {
+    return (
+      <Detail
+        actions={<ManagedInstall executable={executable} onRefresh={onRefresh} />}
+        markdown={managedInstallGuide(executable)}
+      />
+    );
+  }
   return (
     <Detail
       actions={<AutoInstall onRefresh={onRefresh} />}
       markdown={isMac ? macOSInstallGuide(executable) : windowsInstallGuide(executable)}
     />
+  );
+}
+
+function ManagedInstall({ executable, onRefresh }: { executable: string; onRefresh: () => void }) {
+  const [isLoading, setIsLoading] = useState(false);
+
+  return (
+    <ActionPanel>
+      {!isLoading && (
+        <Action
+          title={`Download ${executable}`}
+          icon={Icon.Download}
+          onAction={async () => {
+            if (isLoading) return;
+
+            setIsLoading(true);
+            const installationToast = new Toast({ style: Toast.Style.Animated, title: `Downloading ${executable}...` });
+            await installationToast.show();
+
+            try {
+              await downloadSpotdl(environment.supportPath);
+              await installationToast.hide();
+              onRefresh();
+            } catch (error) {
+              await installationToast.hide();
+              console.error(error);
+              const message = error instanceof Error ? error.message : "An unknown error occurred";
+              await showToast({
+                style: Toast.Style.Failure,
+                title: "Download Failed",
+                message,
+                primaryAction: {
+                  title: "Copy to Clipboard",
+                  onAction: () => {
+                    Clipboard.copy(message);
+                  },
+                },
+              });
+            }
+            setIsLoading(false);
+          }}
+        />
+      )}
+    </ActionPanel>
   );
 }
 
@@ -66,7 +129,7 @@ function AutoInstall({ onRefresh }: { onRefresh: () => void }) {
             await installationToast.show();
 
             try {
-              await execa(homebrewPath, ["install", "yt-dlp", "ffmpeg", "gallery-dl"]);
+              await execa(homebrewPath, ["install", ...HOMEBREW_FORMULAE]);
               await installationToast.hide();
               onRefresh();
             } catch (error) {
