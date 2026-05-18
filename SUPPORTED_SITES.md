@@ -1,0 +1,21 @@
+# Supported Sites
+
+The Downloader picks the right tool for each URL automatically.
+
+## Videos & audio
+
+Handled by [yt-dlp](https://github.com/yt-dlp/yt-dlp) — YouTube, Twitch, Vimeo, TikTok, X, Bilibili and hundreds more.
+
+Full list: <https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md>
+
+## Image galleries
+
+Handled by [gallery-dl](https://github.com/mikf/gallery-dl) — Reddit, Imgur, Pixiv, DeviantArt, Flickr, Instagram and hundreds more.
+
+Full list: <https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.md>
+
+## Not supported in v1
+
+Sites that require an in-app login or OAuth sign-in are not supported in v1.
+
+For login-gated image galleries, you can still authenticate by setting **Gallery: Cookies from Browser** in the extension preferences — gallery-dl will reuse your browser's session cookies.
