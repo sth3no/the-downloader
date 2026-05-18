@@ -20,10 +20,10 @@ const { homebrewPath } = getPreferenceValues<ExtensionPreferences>();
 export default function Updater() {
   const { pop } = useNavigation();
   const [versions, setVersions] = useState<Record<string, string>>(
-    isMac ? { "yt-dlp": "", ffmpeg: "", "gallery-dl": "", spotdl: "" } : { "yt-dlp": "", spotdl: "" },
+    isMac ? { "yt-dlp": "", ffmpeg: "", "gallery-dl": "", deno: "", spotdl: "" } : { "yt-dlp": "", spotdl: "" },
   );
   const [outdated, setOutdated] = useState<Record<string, string>>(
-    isMac ? { "yt-dlp": "", ffmpeg: "", "gallery-dl": "", spotdl: "" } : { "yt-dlp": "", spotdl: "" },
+    isMac ? { "yt-dlp": "", ffmpeg: "", "gallery-dl": "", deno: "", spotdl: "" } : { "yt-dlp": "", spotdl: "" },
   );
   const [upgradingMessage, setUpgradingMessage] = useState<string>("");
 
@@ -122,7 +122,14 @@ async function getSpotdlVersion(): Promise<string> {
 async function getVersions() {
   const versions: Record<string, string> = {};
   if (isMac) {
-    const { stdout: infoOutput } = await execa(homebrewPath, ["info", "--json=v2", "yt-dlp", "ffmpeg", "gallery-dl"]);
+    const { stdout: infoOutput } = await execa(homebrewPath, [
+      "info",
+      "--json=v2",
+      "yt-dlp",
+      "ffmpeg",
+      "gallery-dl",
+      "deno",
+    ]);
     const info = JSON.parse(infoOutput) as { formulae: { name: string; versions: { stable: string } }[] };
     for (const { name, versions: formulaVersions } of info.formulae) {
       versions[name] = formulaVersions.stable;
@@ -162,6 +169,7 @@ async function getOutdated() {
       "yt-dlp",
       "ffmpeg",
       "gallery-dl",
+      "deno",
     ]);
     const info = JSON.parse(outdatedOutput) as { formulae: { name: string; current_version: string }[] };
     for (const { name, current_version } of info.formulae) {
@@ -200,7 +208,7 @@ async function getOutdated() {
 
 async function upgrade() {
   if (isMac) {
-    await execa(homebrewPath, ["upgrade", "yt-dlp", "ffmpeg", "gallery-dl"]);
+    await execa(homebrewPath, ["upgrade", "yt-dlp", "ffmpeg", "gallery-dl", "deno"]);
   } else if (isWindows) {
     const wingetPath = await getWingetPath();
     await execa(wingetPath, [

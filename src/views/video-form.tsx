@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm, usePromise } from "@raycast/utils";
 import {
   DownloadOptions,
+  getDenoPath,
   getffmpegPath,
   getffprobePath,
   getFormats,
@@ -48,6 +49,7 @@ export function VideoForm({ url, onUrlChange }: VideoFormProps) {
   const ytdlPath = useMemo(() => getytdlPath(), [error]);
   const ffmpegPath = useMemo(() => getffmpegPath(), [error]);
   const ffprobePath = useMemo(() => getffprobePath(), [error]);
+  const denoPath = useMemo(() => getDenoPath(), [error]);
 
   const { handleSubmit, values, itemProps, setValidationError } = useForm<DownloadOptions>({
     initialValues: {
@@ -74,7 +76,13 @@ export function VideoForm({ url, onUrlChange }: VideoFormProps) {
         return;
       }
       const outputTemplate = path.join(downloadPath, `${video?.title || "video"} (%(id)s).%(ext)s`);
-      const options = buildVideoDownloadArgs({ url: values.url, format: values.format, outputTemplate, ffmpegPath });
+      const options = buildVideoDownloadArgs({
+        url: values.url,
+        format: values.format,
+        outputTemplate,
+        ffmpegPath,
+        denoPath,
+      });
 
       const toast = await showToast({
         title: "Downloading Video",
@@ -182,7 +190,7 @@ export function VideoForm({ url, onUrlChange }: VideoFormProps) {
       if (!url) return;
       if (!isValidUrl(url)) return;
 
-      const data = await fetchVideoInfo(ytdlPath, url, forceIpv4);
+      const data = await fetchVideoInfo(ytdlPath, url, forceIpv4, fs.existsSync(denoPath) ? denoPath : undefined);
 
       return { ...data, title: sanitizeVideoTitle(data.title) };
     },
@@ -221,6 +229,9 @@ export function VideoForm({ url, onUrlChange }: VideoFormProps) {
     }
     if (!fs.existsSync(ffprobePath)) {
       return "ffprobe";
+    }
+    if (!fs.existsSync(denoPath)) {
+      return "deno";
     }
     return null;
   }, [error]);

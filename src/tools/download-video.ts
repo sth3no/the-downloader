@@ -7,6 +7,7 @@ import {
   getytdlPath,
   getffmpegPath,
   getffprobePath,
+  getDenoPath,
   sanitizeVideoTitle,
 } from "../utils.js";
 import fs from "node:fs";
@@ -24,6 +25,8 @@ export default async function tool(input: Input) {
   const ytdlPath = getytdlPath();
   const ffmpegPath = getffmpegPath();
   const ffprobePath = getffprobePath();
+  const denoPath = getDenoPath();
+  const deno = fs.existsSync(denoPath) ? denoPath : undefined;
 
   // Validate executables exist
   if (!fs.existsSync(ytdlPath)) {
@@ -37,7 +40,7 @@ export default async function tool(input: Input) {
   }
 
   // Get video info and available formats
-  const video = await fetchVideoInfo(ytdlPath, input.url, forceIpv4);
+  const video = await fetchVideoInfo(ytdlPath, input.url, forceIpv4, deno);
 
   // Check if it's a live stream
   if (video.live_status !== "not_live" && video.live_status !== undefined) {
@@ -46,6 +49,7 @@ export default async function tool(input: Input) {
 
   // Set up download options
   const options: string[] = ["-P", downloadPath];
+  if (deno) options.push("--js-runtimes", `deno:${deno}`);
 
   // Getet the best video+audio format
   const formats = getFormats(video);

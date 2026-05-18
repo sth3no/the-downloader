@@ -1,7 +1,7 @@
 import { isWindows } from "./binary.js";
 
 export type InstallMethod = "homebrew" | "winget" | "managed-binary";
-export type ToolId = "yt-dlp" | "ffmpeg" | "gallery-dl" | "spotdl";
+export type ToolId = "yt-dlp" | "ffmpeg" | "gallery-dl" | "deno" | "spotdl";
 
 export type ToolSpec = {
   id: ToolId;
@@ -15,6 +15,7 @@ export const TOOLS: Record<ToolId, ToolSpec> = {
   "yt-dlp": { id: "yt-dlp", installMethod: packageManagerMethod },
   ffmpeg: { id: "ffmpeg", installMethod: packageManagerMethod },
   "gallery-dl": { id: "gallery-dl", installMethod: packageManagerMethod },
+  deno: { id: "deno", installMethod: packageManagerMethod },
   spotdl: { id: "spotdl", installMethod: "managed-binary" },
 };
 

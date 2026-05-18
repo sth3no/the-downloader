@@ -202,6 +202,13 @@
       "required": false
     },
     {
+      "name": "denoPath",
+      "title": "Deno Path",
+      "description": "Path to the Deno executable — the JavaScript runtime yt-dlp uses for YouTube. Run `which deno` to find it.",
+      "type": "textfield",
+      "required": false
+    },
+    {
       "name": "galleryDlPath",
       "title": "gallery-dl Path",
       "description": "Path to the gallery-dl executable. Run `which gallery-dl` to find it.",

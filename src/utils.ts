@@ -23,6 +23,7 @@ export const {
   ffprobePath: ffprobePathPreference,
   galleryDlPath: galleryDlPathPreference,
   spotDlPath: spotDlPathPreference,
+  denoPath: denoPathPreference,
 } = getPreferenceValues<ExtensionPreferences>();
 
 export async function getWingetPath() {
@@ -38,6 +39,7 @@ export const getytdlPath = () => resolveBinary("yt-dlp", ytdlPathPreference);
 export const getffmpegPath = () => resolveBinary("ffmpeg", ffmpegPathPreference);
 export const getffprobePath = () => resolveBinary("ffprobe", ffprobePathPreference);
 export const getGalleryDlPath = () => resolveBinary("gallery-dl", galleryDlPathPreference);
+export const getDenoPath = () => resolveBinary("deno", denoPathPreference);
 export const getSpotdlPath = () => resolveBinary("spotdl", spotDlPathPreference, environment.supportPath);
 
 export type DownloadOptions = {
