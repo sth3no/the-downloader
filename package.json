@@ -1,21 +1,11 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
-  "name": "download",
-  "title": "Download",
-  "description": "Download videos from YouTube, 𝕏, Twitch, Instagram, Bilibili and more",
+  "name": "the-downloader",
+  "title": "The Downloader",
+  "description": "Download videos, audio, and image galleries from YouTube, Reddit, Instagram and more",
   "type": "module",
   "icon": "extension-icon.png",
-  "author": "vimtor",
-  "contributors": [
-    "pernielsentikaer",
-    "d2a",
-    "ridemountainpig",
-    "xmorse",
-    "litomore",
-    "anwarulislam",
-    "yusifaliyevpro",
-    "xilopaint"
-  ],
+  "author": "sth3no",
   "categories": [
     "Applications",
     "Data",
@@ -33,7 +23,7 @@
     {
       "name": "index",
       "title": "Download",
-      "subtitle": "Download",
+      "subtitle": "The Downloader",
       "description": "Download video, audio, galleries, or transcripts",
       "mode": "view"
     }
@@ -217,7 +207,7 @@
     "instructions": "After downloading the video, always link the video with [<video title>](<download path>), so the user can easily open it.",
     "evals": [
       {
-        "input": "@download download the video from https://www.youtube.com/watch?v=ykaj0pS4A1A",
+        "input": "@the-downloader download the video from https://www.youtube.com/watch?v=ykaj0pS4A1A",
         "mocks": {
           "download-video": {
             "downloadedPath": "/Users/path/to/video.mp4",
@@ -244,7 +234,7 @@
         ]
       },
       {
-        "input": "@download what did they say about elon musk in https://www.youtube.com/watch?v=T_5zHExXN7o",
+        "input": "@the-downloader what did they say about elon musk in https://www.youtube.com/watch?v=T_5zHExXN7o",
         "mocks": {
           "extract-transcript": {
             "language": "en",
@@ -290,7 +280,6 @@
     "dev": "ray develop",
     "fix-lint": "ray lint --fix",
     "lint": "ray lint",
-    "pull": "ray pull-contributions",
     "publish": "ray publish",
     "test": "vitest run"
   },
