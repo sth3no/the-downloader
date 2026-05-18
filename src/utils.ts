@@ -21,6 +21,7 @@ export const {
   ytdlPath: ytdlPathPreference,
   ffmpegPath: ffmpegPathPreference,
   ffprobePath: ffprobePathPreference,
+  galleryDlPath: galleryDlPathPreference,
 } = getPreferenceValues<ExtensionPreferences>();
 
 export async function getWingetPath() {
@@ -35,7 +36,7 @@ export async function getWingetPath() {
 export const getytdlPath = () => resolveBinary("yt-dlp", ytdlPathPreference);
 export const getffmpegPath = () => resolveBinary("ffmpeg", ffmpegPathPreference);
 export const getffprobePath = () => resolveBinary("ffprobe", ffprobePathPreference);
-export const getGalleryDlPath = () => resolveBinary("gallery-dl");
+export const getGalleryDlPath = () => resolveBinary("gallery-dl", galleryDlPathPreference);
 
 export type DownloadOptions = {
   url: string;

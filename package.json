@@ -34,7 +34,7 @@
       "name": "index",
       "title": "Download",
       "subtitle": "Download",
-      "description": "Download video with parameters",
+      "description": "Download video, audio, galleries, or transcripts",
       "mode": "view"
     }
   ],
@@ -123,6 +123,29 @@
       "label": "Enable",
       "default": false,
       "required": false
+    },
+    {
+      "name": "galleryDlPath",
+      "title": "gallery-dl Path",
+      "description": "Path to the gallery-dl executable. Run `which gallery-dl` to find it.",
+      "type": "textfield",
+      "required": false
+    },
+    {
+      "name": "cookiesFromBrowser",
+      "title": "Cookies from Browser",
+      "description": "Browser to read cookies from for login-gated galleries.",
+      "type": "dropdown",
+      "default": "",
+      "required": false,
+      "data": [
+        { "title": "None", "value": "" },
+        { "title": "Safari", "value": "safari" },
+        { "title": "Chrome", "value": "chrome" },
+        { "title": "Firefox", "value": "firefox" },
+        { "title": "Brave", "value": "brave" },
+        { "title": "Edge", "value": "edge" }
+      ]
     }
   ],
   "ai": {
