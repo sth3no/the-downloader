@@ -15,7 +15,10 @@ export type SpotdlRelease = { version: string; assets: ReleaseAsset[] };
  * `spotDL` asset (a source file) is excluded by the `spotdl-` prefix check.
  */
 export function resolveSpotdlAsset(platform: NodeJS.Platform, assets: ReleaseAsset[]): ReleaseAsset {
-  const suffix = platform === "win32" ? "win32.exe" : "darwin";
+  const suffix = platform === "win32" ? "win32.exe" : platform === "darwin" ? "darwin" : null;
+  if (!suffix) {
+    throw new Error(`spotDL has no prebuilt binary for platform "${platform}"`);
+  }
   const asset = assets.find((a) => a.name.startsWith("spotdl-") && a.name.endsWith(suffix));
   if (!asset) {
     throw new Error(`No spotDL release asset found for platform "${platform}"`);
