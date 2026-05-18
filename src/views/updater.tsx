@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
 import fs from "node:fs";
-import { Action, ActionPanel, Clipboard, Detail, Icon, Toast, environment, getPreferenceValues, useNavigation } from "@raycast/api";
+import {
+  Action,
+  ActionPanel,
+  Clipboard,
+  Detail,
+  Icon,
+  Toast,
+  environment,
+  getPreferenceValues,
+  useNavigation,
+} from "@raycast/api";
 import { execa } from "execa";
 import { getSpotdlPath, getWingetPath, isMac, isWindows } from "../utils.js";
 import { downloadSpotdl, getInstalledVersion, getLatestRelease } from "../lib/managed-binary.js";
@@ -53,11 +63,7 @@ export default function Updater() {
         Object.entries(versions)
           .map(([cli, version]) => {
             const status =
-              version === "not installed"
-                ? ""
-                : outdated[cli]
-                  ? `(outdated: ${outdated[cli]})`
-                  : "(up to date)";
+              version === "not installed" ? "" : outdated[cli] ? `(outdated: ${outdated[cli]})` : "(up to date)";
             return `${cli}: ${version === "" ? "Checking..." : version}${status ? ` ${status}` : ""}`;
           })
           .join("\n\n"),
