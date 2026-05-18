@@ -14,6 +14,10 @@ Handled by [gallery-dl](https://github.com/mikf/gallery-dl) — Reddit, Imgur, P
 
 Full list: <https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.md>
 
+## Music
+
+Handled by [spotDL](https://github.com/spotDL/spotify-downloader) — paste a Spotify track, album, or playlist link and the audio is fetched from YouTube with metadata and album art.
+
 ## Not supported in v1
 
 Sites that require an in-app login or OAuth sign-in are not supported in v1.
