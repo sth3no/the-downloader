@@ -117,6 +117,15 @@
       ]
     },
     {
+      "name": "exactFormatSelection",
+      "title": "Video: Exact Format Selection",
+      "description": "Show an Exact Format field in the Download form for video downloads — every concrete yt-dlp format with its file size. Leave off for simple Quality + Container choices.",
+      "type": "checkbox",
+      "label": "Enable",
+      "default": false,
+      "required": false
+    },
+    {
       "name": "spotifyAudioFormat",
       "title": "Spotify: Audio Format",
       "description": "Default audio format for Spotify downloads.",
