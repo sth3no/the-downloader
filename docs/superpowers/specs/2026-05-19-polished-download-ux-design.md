@@ -176,9 +176,10 @@ place that knows how filetypes map to tools. It exposes:
   so.
 - **`resolveTool(source: SourceType, filetype: Filetype): ToolId`** — the
   *(source, filetype)* → tool function (see "Filetype → tool routing").
-- **`requiredTools(source: SourceType, filetype: Filetype): ToolId[]`** — the
+- **`requiredTools(source: SourceType, filetype: Filetype): string[]`** — the
   executables that must exist for a given selection, for the form's missing-tool
-  check (see "Error handling").
+  check (see "Error handling"). The return type is `string[]`, not `ToolId[]`,
+  because the set includes `ffprobe`, which is not a registry `ToolId`.
 
 `ToolId` and `SourceType` are imported from the existing `lib/tools.ts` and
 `types.ts`. No `@raycast/api` import, so the module loads in vitest.

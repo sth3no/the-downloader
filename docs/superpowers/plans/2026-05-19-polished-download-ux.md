@@ -949,7 +949,7 @@ Run: `npm run build`
 Expected: builds with no type errors — nothing imports the deleted forms.
 
 Run: `npm test`
-Expected: all suites pass (`binary`, `detect`, `gallerydl`, `managed-binary`, `monolith`, `spotdl`, `video-format`, `ytdlp`, `filetype`, `config`).
+Expected: all suites pass (`binary`, `detect`, `gallerydl`, `managed-binary`, `monolith`, `spotdl`, `video-format`, `ytdlp`, `filetype`).
 
 Run: `npm run lint`
 Expected: passes. If it reports formatting issues, run `npm run fix-lint`, then re-stage. The pre-existing `author`-field warning is expected — ignore it.
