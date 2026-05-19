@@ -50,6 +50,10 @@ describe("webpageFilename", () => {
     expect(webpageFilename("example.com/article")).toBe("example.com-article.html");
   });
 
+  it("handles a protocol-less URL whose host starts with http", () => {
+    expect(webpageFilename("httpbin.org/get")).toBe("httpbin.org-get.html");
+  });
+
   it("falls back to webpage.html for an unparseable URL", () => {
     expect(webpageFilename("not a url")).toBe("webpage.html");
   });

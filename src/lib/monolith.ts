@@ -24,7 +24,8 @@ export function buildMonolithArgs(o: MonolithSaveOptions): string[] {
 export function webpageFilename(url: string): string {
   let raw = "webpage";
   try {
-    const u = new URL(url.startsWith("http") ? url : `https://${url}`);
+    const hasProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(url);
+    const u = new URL(hasProtocol ? url : `https://${url}`);
     raw = `${u.hostname.replace(/^www\./, "")}${u.pathname}${u.search}`;
   } catch {
     // keep the "webpage" fallback
