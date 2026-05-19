@@ -14,17 +14,16 @@ import {
 import { execa } from "execa";
 import { getSpotdlPath, getWingetPath, isMac, isWindows } from "../utils.js";
 import { downloadSpotdl, getInstalledVersion, getLatestRelease } from "../lib/managed-binary.js";
+import { HOMEBREW_FORMULAE, WINGET_PACKAGES } from "../lib/tools.js";
 
 const { homebrewPath } = getPreferenceValues<ExtensionPreferences>();
 
 export default function Updater() {
   const { pop } = useNavigation();
-  const [versions, setVersions] = useState<Record<string, string>>(
-    isMac ? { "yt-dlp": "", ffmpeg: "", "gallery-dl": "", deno: "", spotdl: "" } : { "yt-dlp": "", spotdl: "" },
-  );
-  const [outdated, setOutdated] = useState<Record<string, string>>(
-    isMac ? { "yt-dlp": "", ffmpeg: "", "gallery-dl": "", deno: "", spotdl: "" } : { "yt-dlp": "", spotdl: "" },
-  );
+  const emptyVersions = (): Record<string, string> =>
+    Object.fromEntries([...(isMac ? HOMEBREW_FORMULAE : WINGET_PACKAGES), "spotdl"].map((name) => [name, ""]));
+  const [versions, setVersions] = useState<Record<string, string>>(emptyVersions);
+  const [outdated, setOutdated] = useState<Record<string, string>>(emptyVersions);
   const [upgradingMessage, setUpgradingMessage] = useState<string>("");
 
   const allUpToDate = Object.values(outdated).every((version) => !version);
@@ -122,14 +121,7 @@ async function getSpotdlVersion(): Promise<string> {
 async function getVersions() {
   const versions: Record<string, string> = {};
   if (isMac) {
-    const { stdout: infoOutput } = await execa(homebrewPath, [
-      "info",
-      "--json=v2",
-      "yt-dlp",
-      "ffmpeg",
-      "gallery-dl",
-      "deno",
-    ]);
+    const { stdout: infoOutput } = await execa(homebrewPath, ["info", "--json=v2", ...HOMEBREW_FORMULAE]);
     const info = JSON.parse(infoOutput) as { formulae: { name: string; versions: { stable: string } }[] };
     for (const { name, versions: formulaVersions } of info.formulae) {
       versions[name] = formulaVersions.stable;
@@ -137,20 +129,26 @@ async function getVersions() {
   } else if (isWindows) {
     try {
       const wingetPath = await getWingetPath();
-      const { stdout: ytdlpOutput } = await execa(wingetPath, ["list", "--id", "yt-dlp.yt-dlp", "--exact"]);
-      versions["yt-dlp"] = parseWingetVersion(ytdlpOutput);
+      for (const pkg of WINGET_PACKAGES) {
+        try {
+          const { stdout } = await execa(wingetPath, ["list", "--id", pkg, "--exact"]);
+          versions[pkg] = parseWingetVersion(stdout, pkg);
+        } catch {
+          versions[pkg] = "";
+        }
+      }
     } catch {
-      versions["yt-dlp"] = "";
+      for (const pkg of WINGET_PACKAGES) versions[pkg] = "";
     }
   }
   versions["spotdl"] = await getSpotdlVersion();
   return versions;
 }
 
-function parseWingetVersion(output: string): string {
+function parseWingetVersion(output: string, packageId: string): string {
   const lines = output.split("\n");
   for (const line of lines) {
-    if (line.includes("yt-dlp")) {
+    if (line.includes(packageId)) {
       const versionMatch = line.match(/(\d+\.)+\d+/);
       if (versionMatch) {
         return versionMatch[0];
@@ -163,14 +161,7 @@ function parseWingetVersion(output: string): string {
 async function getOutdated() {
   const outdated: Record<string, string> = {};
   if (isMac) {
-    const { stdout: outdatedOutput } = await execa(homebrewPath, [
-      "outdated",
-      "--json=v2",
-      "yt-dlp",
-      "ffmpeg",
-      "gallery-dl",
-      "deno",
-    ]);
+    const { stdout: outdatedOutput } = await execa(homebrewPath, ["outdated", "--json=v2", ...HOMEBREW_FORMULAE]);
     const info = JSON.parse(outdatedOutput) as { formulae: { name: string; current_version: string }[] };
     for (const { name, current_version } of info.formulae) {
       outdated[name] = current_version;
@@ -180,10 +171,12 @@ async function getOutdated() {
       const wingetPath = await getWingetPath();
       const { stdout: upgradeOutput } = await execa(wingetPath, ["upgrade"]);
       for (const line of upgradeOutput.split("\n")) {
-        if (line.includes("yt-dlp.yt-dlp")) {
-          const versionMatch = line.match(/(\d+\.)+\d+/g);
-          if (versionMatch && versionMatch.length >= 2) {
-            outdated["yt-dlp"] = versionMatch[1];
+        for (const pkg of WINGET_PACKAGES) {
+          if (line.includes(pkg)) {
+            const versionMatch = line.match(/(\d+\.)+\d+/g);
+            if (versionMatch && versionMatch.length >= 2) {
+              outdated[pkg] = versionMatch[1];
+            }
           }
         }
       }
@@ -208,16 +201,22 @@ async function getOutdated() {
 
 async function upgrade() {
   if (isMac) {
-    await execa(homebrewPath, ["upgrade", "yt-dlp", "ffmpeg", "gallery-dl", "deno"]);
+    await execa(homebrewPath, ["upgrade", ...HOMEBREW_FORMULAE]);
   } else if (isWindows) {
     const wingetPath = await getWingetPath();
-    await execa(wingetPath, [
-      "upgrade",
-      "--id",
-      "yt-dlp.yt-dlp",
-      "--accept-source-agreements",
-      "--accept-package-agreements",
-    ]);
+    for (const pkg of WINGET_PACKAGES) {
+      try {
+        await execa(wingetPath, [
+          "upgrade",
+          "--id",
+          pkg,
+          "--accept-source-agreements",
+          "--accept-package-agreements",
+        ]);
+      } catch {
+        // A package with no available upgrade exits non-zero — skip it.
+      }
+    }
   }
   try {
     const spotdlPath = getSpotdlPath();
