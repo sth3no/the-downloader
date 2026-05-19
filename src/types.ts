@@ -1,4 +1,4 @@
-export type SourceType = "video" | "gallery" | "spotify";
+export type SourceType = "video" | "gallery" | "spotify" | "webpage";
 
 export type Format = {
   format_id: string;
