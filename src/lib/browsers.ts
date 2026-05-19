@@ -58,3 +58,102 @@ export function findChromiumProfile(paths: PlatformPaths, ctx: ResolveContext = 
   if (fs.existsSync(path.join(profile, "Network", "Cookies"))) return profile;
   return "";
 }
+
+type Browser = {
+  id: string;
+  label: string;
+  resolve(ctx: ResolveContext): string;
+};
+
+const capitalize = (s: string): string => (s.length === 0 ? s : s[0].toUpperCase() + s.slice(1));
+
+const native = (id: string): Browser => ({
+  id,
+  label: capitalize(id),
+  resolve: () => id,
+});
+
+const firefoxFork = (id: string, label: string, paths: PlatformPaths): Browser => ({
+  id,
+  label,
+  resolve(ctx) {
+    const p = findFirefoxProfile(paths, ctx);
+    return p ? `firefox:${p}` : "";
+  },
+});
+
+const chromiumFork = (id: string, label: string, paths: PlatformPaths): Browser => ({
+  id,
+  label,
+  resolve(ctx) {
+    const p = findChromiumProfile(paths, ctx);
+    return p ? `chromium:${p}` : "";
+  },
+});
+
+// Keep in sync with the `cookiesFromBrowser` dropdown in package.json.
+export const BROWSERS: Browser[] = [
+  native("chrome"),
+  native("chromium"),
+  native("firefox"),
+  native("safari"),
+  native("edge"),
+  native("brave"),
+  native("opera"),
+  native("vivaldi"),
+  native("librewolf"),
+  firefoxFork("zen", "Zen", {
+    win: "AppData/Roaming/zen/Profiles",
+    mac: "Library/Application Support/zen/Profiles",
+    linux: ".zen",
+  }),
+  firefoxFork("floorp", "Floorp", {
+    win: "AppData/Roaming/Floorp/Profiles",
+    mac: "Library/Application Support/Floorp/Profiles",
+  }),
+  chromiumFork("arc", "Arc", {
+    win: "AppData/Local/Arc/User Data",
+    mac: "Library/Application Support/Arc/User Data",
+  }),
+];
+
+export type ResolvedBrowser = {
+  spec: string;
+  label: string;
+  warning?: string;
+};
+
+/**
+ * Translate the user's preference selection into the value gallery-dl wants,
+ * plus a user-facing label and an optional warning when the selection isn't
+ * usable. Callers short-circuit on `warning` with a Failure toast.
+ */
+export function resolveBrowser(
+  id: string,
+  customSpec?: string,
+  ctx: ResolveContext = defaultCtx(),
+): ResolvedBrowser {
+  if (!id) return { spec: "", label: "" };
+
+  if (id === "custom") {
+    const spec = (customSpec ?? "").trim();
+    return spec
+      ? { spec, label: `Custom (${spec})` }
+      : {
+          spec: "",
+          label: "Custom",
+          warning: "Custom is selected but no Custom Browser Spec is set in preferences.",
+        };
+  }
+
+  const entry = BROWSERS.find((b) => b.id === id);
+  if (!entry) return { spec: id, label: id };
+
+  const spec = entry.resolve(ctx);
+  if (spec) return { spec, label: entry.label };
+  return {
+    spec: "",
+    label: entry.label,
+    warning: `No ${entry.label} profile with cookies was found. Make sure ${entry.label} is installed and has been opened at least once, or use a Custom Browser Spec.`,
+  };
+}

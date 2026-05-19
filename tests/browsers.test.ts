@@ -8,7 +8,7 @@ vi.mock("node:fs", () => ({
 }));
 
 import * as fs from "node:fs";
-import { findChromiumProfile, findFirefoxProfile } from "../src/lib/browsers";
+import { findChromiumProfile, findFirefoxProfile, resolveBrowser } from "../src/lib/browsers";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -120,5 +120,76 @@ describe("findChromiumProfile", () => {
 
   it("returns '' when the platform key is absent", () => {
     expect(findChromiumProfile({ mac: "Library/Application Support/Arc/User Data" }, ctx)).toBe("");
+  });
+});
+
+describe("resolveBrowser", () => {
+  const ctx = { platform: "win32" as NodeJS.Platform, home: "/home/u" };
+
+  it("returns blank values for an empty id (None)", () => {
+    expect(resolveBrowser("", undefined, ctx)).toEqual({ spec: "", label: "" });
+  });
+
+  it("passes a native id through with its capitalized label", () => {
+    expect(resolveBrowser("chrome", undefined, ctx)).toEqual({ spec: "chrome", label: "Chrome" });
+  });
+
+  it("resolves a firefox fork to firefox:<path> when the profile is found", () => {
+    const base = path.join("/home/u", "AppData/Roaming/zen/Profiles");
+    setupFirefoxProfiles(base, [{ name: "p.default", mtimeMs: 100, hasCookies: true }]);
+    expect(resolveBrowser("zen", undefined, ctx)).toEqual({
+      spec: `firefox:${path.join(base, "p.default")}`,
+      label: "Zen",
+    });
+  });
+
+  it("warns when a firefox fork profile is missing", () => {
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+    expect(resolveBrowser("zen", undefined, ctx)).toMatchObject({
+      spec: "",
+      label: "Zen",
+      warning: expect.stringContaining("No Zen profile"),
+    });
+  });
+
+  it("resolves a chromium fork to chromium:<path> when Cookies exists", () => {
+    const base = path.join("/home/u", "AppData/Local/Arc/User Data");
+    vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === path.join(base, "Default", "Cookies"));
+    expect(resolveBrowser("arc", undefined, ctx)).toEqual({
+      spec: `chromium:${path.join(base, "Default")}`,
+      label: "Arc",
+    });
+  });
+
+  it("warns when a chromium fork profile is missing", () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+    expect(resolveBrowser("arc", undefined, ctx)).toMatchObject({
+      spec: "",
+      label: "Arc",
+      warning: expect.stringContaining("No Arc profile"),
+    });
+  });
+
+  it("returns a trimmed custom spec", () => {
+    expect(resolveBrowser("custom", "  firefox:/some/path  ", ctx)).toEqual({
+      spec: "firefox:/some/path",
+      label: "Custom (firefox:/some/path)",
+    });
+  });
+
+  it("warns when custom is selected but the spec is empty or whitespace", () => {
+    expect(resolveBrowser("custom", "   ", ctx)).toMatchObject({
+      spec: "",
+      label: "Custom",
+      warning: expect.stringContaining("Custom is selected but no Custom Browser Spec"),
+    });
+    expect(resolveBrowser("custom", undefined, ctx)).toMatchObject({ spec: "", label: "Custom" });
+  });
+
+  it("passes an unknown id through (forward-compat)", () => {
+    expect(resolveBrowser("vivaldi-snapshot", undefined, ctx)).toEqual({
+      spec: "vivaldi-snapshot",
+      label: "vivaldi-snapshot",
+    });
   });
 });
