@@ -24,7 +24,12 @@ export function buildSpotdlArgs(o: SpotdlDownloadOptions): string[] {
 
 export type SpotdlProgress = { tracks: number };
 
-/** Run spotDL; onProgress fires as tracks complete. Resolves with the track count or rejects with stderr. */
+/**
+ * Run spotDL; onProgress fires as tracks complete. Resolves with the track count
+ * or rejects with the failure output. spotDL is Python+Rich-based and routinely
+ * prints tracebacks/errors to stdout rather than stderr, so stdout is captured
+ * and used as the error message when stderr is empty.
+ */
 export function runSpotdlDownload(
   binaryPath: string,
   options: SpotdlDownloadOptions,
@@ -33,13 +38,13 @@ export function runSpotdlDownload(
   return new Promise((resolve, reject) => {
     const child = spawn(binaryPath, buildSpotdlArgs(options));
     let tracks = 0;
+    let stdout = "";
     let stderr = "";
     child.stdout.on("data", (data: Buffer) => {
+      const text = data.toString();
+      stdout += text;
       // spotDL prints one "Downloaded ..." line per completed track.
-      const completed = data
-        .toString()
-        .split("\n")
-        .filter((line) => line.includes("Downloaded")).length;
+      const completed = text.split("\n").filter((line) => line.includes("Downloaded")).length;
       if (completed > 0) {
         tracks += completed;
         onProgress({ tracks });
@@ -49,7 +54,7 @@ export function runSpotdlDownload(
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolve({ tracks });
-      else reject(new Error(stderr.trim() || `spotdl exited with code ${code}`));
+      else reject(new Error(stderr.trim() || stdout.trim() || `spotdl exited with code ${code}`));
     });
   });
 }

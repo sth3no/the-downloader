@@ -80,4 +80,23 @@ describe("runSpotdlDownload", () => {
 
     await expect(promise).rejects.toThrow("AudioProviderError");
   });
+
+  it("falls back to stdout when stderr is empty on a non-zero exit", async () => {
+    // spotDL is Python+Rich-based and routinely prints tracebacks/errors to
+    // stdout, not stderr. Without this fallback the user just sees the bare
+    // exit code and has nothing to act on.
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const promise = runSpotdlDownload(
+      "/support/spotdl",
+      { url: "https://open.spotify.com/track/bad", destination: "/tmp", format: "mp3", ffmpegPath: "/ff" },
+      vi.fn(),
+    );
+
+    child.stdout.emit("data", Buffer.from("LookupError: Could not find any results for the query\n"));
+    child.emit("close", 1);
+
+    await expect(promise).rejects.toThrow("Could not find any results for the query");
+  });
 });
