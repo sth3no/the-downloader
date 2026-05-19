@@ -24,6 +24,7 @@ export const {
   galleryDlPath: galleryDlPathPreference,
   spotDlPath: spotDlPathPreference,
   denoPath: denoPathPreference,
+  monolithPath: monolithPathPreference,
 } = getPreferenceValues<ExtensionPreferences>();
 
 export async function getWingetPath() {
@@ -41,6 +42,7 @@ export const getffprobePath = () => resolveBinary("ffprobe", ffprobePathPreferen
 export const getGalleryDlPath = () => resolveBinary("gallery-dl", galleryDlPathPreference);
 export const getDenoPath = () => resolveBinary("deno", denoPathPreference);
 export const getSpotdlPath = () => resolveBinary("spotdl", spotDlPathPreference, environment.supportPath);
+export const getMonolithPath = () => resolveBinary("monolith", monolithPathPreference);
 
 export type DownloadOptions = {
   url: string;
@@ -117,8 +119,6 @@ const hasCodec = ({ vcodec, acodec }: Format) => {
     hasAcodec: Boolean(acodec) && acodec !== "none",
   };
 };
-
-export const MP3_FORMAT_ID = "bestaudio#mp3";
 
 const mp3Format: Format = {
   format_id: "bestaudio",
