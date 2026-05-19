@@ -8,16 +8,20 @@ import {
   getPreferenceValues,
   launchCommand,
   open,
+  openExtensionPreferences,
+  showInFinder,
   showToast,
 } from "@raycast/api";
 import { detectSource } from "./lib/detect.js";
 import { getConfig } from "./lib/config.js";
 import { composeVideoFormat } from "./lib/video-format.js";
 import { runVideoDownload } from "./lib/ytdlp.js";
-import { runGalleryDownload } from "./lib/gallerydl.js";
+import { isLoginRequiredError, runGalleryDownload } from "./lib/gallerydl.js";
+import { resolveBrowser } from "./lib/browsers.js";
 import { runSpotdlDownload } from "./lib/spotdl.js";
 import { runMonolithSave, webpageFilename } from "./lib/monolith.js";
 import {
+  downloadPath,
   getDenoPath,
   getGalleryDlPath,
   getMonolithPath,
@@ -61,7 +65,7 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
     return;
   }
 
-  const { downloadPath, cookiesFromBrowser, spotifyAudioFormat, webpageSaveMode } =
+  const { cookiesFromBrowser, cookiesFromBrowserCustom, spotifyAudioFormat, webpageSaveMode } =
     getPreferenceValues<ExtensionPreferences>();
   const type = detectSource(url);
 
@@ -69,11 +73,21 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
     const galleryDlPath = getGalleryDlPath();
     if (!fs.existsSync(galleryDlPath)) return handOff("gallery-dl", url);
 
+    const browser = resolveBrowser(cookiesFromBrowser, cookiesFromBrowserCustom);
     const toast = await showToast({ style: Toast.Style.Animated, title: "Downloading Gallery", message: "0 files" });
+
+    if (browser.warning) {
+      toast.style = Toast.Style.Failure;
+      toast.title = "Cookies from Browser";
+      toast.message = browser.warning;
+      toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
+      return;
+    }
+
     try {
       const { files } = await runGalleryDownload(
         galleryDlPath,
-        { url, destination: downloadPath, cookiesFromBrowser: cookiesFromBrowser || undefined },
+        { url, destination: downloadPath, cookiesFromBrowser: browser.spec || undefined },
         (p) => {
           toast.message = `${p.files} files`;
         },
@@ -83,10 +97,19 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
       toast.message = `${files} files`;
       toast.primaryAction = { title: "Open Folder", onAction: () => open(downloadPath) };
     } catch (error) {
-      toast.style = Toast.Style.Failure;
-      toast.title = "Download Failed";
-      toast.message = errorMessage(error);
-      toast.primaryAction = { title: "Copy Error", onAction: () => Clipboard.copy(errorMessage(error)) };
+      if (isLoginRequiredError(error)) {
+        toast.style = Toast.Style.Failure;
+        toast.title = "Login Required";
+        toast.message = browser.label
+          ? `Sign in to the site in ${browser.label}, or change the browser in preferences.`
+          : "Set Gallery: Cookies from Browser in preferences to use your browser's session.";
+        toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
+      } else {
+        toast.style = Toast.Style.Failure;
+        toast.title = "Download Failed";
+        toast.message = errorMessage(error);
+        toast.primaryAction = { title: "Copy Error", onAction: () => Clipboard.copy(errorMessage(error)) };
+      }
     }
     return;
   }
@@ -138,7 +161,7 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
       toast.style = Toast.Style.Success;
       toast.title = "Saved";
       toast.message = path.basename(filePath);
-      toast.primaryAction = { title: "Open Folder", onAction: () => open(downloadPath) };
+      toast.primaryAction = { title: "Open Folder", onAction: () => showInFinder(filePath) };
     } catch (error) {
       toast.style = Toast.Style.Failure;
       toast.title = "Save Failed";
@@ -181,7 +204,7 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
     toast.message = filePath ? path.basename(filePath) : "Video";
     toast.primaryAction = {
       title: "Open Folder",
-      onAction: () => open(filePath ? path.dirname(filePath) : downloadPath),
+      onAction: () => (filePath ? showInFinder(filePath) : open(downloadPath)),
     };
     if (filePath) {
       toast.secondaryAction = { title: "Copy to Clipboard", onAction: () => Clipboard.copy({ file: filePath }) };
