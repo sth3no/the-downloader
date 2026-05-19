@@ -6,3 +6,6 @@
 # misc
 .DS_Store
 raycast-env.d.ts
+
+# superpowers brainstorming
+.superpowers/
