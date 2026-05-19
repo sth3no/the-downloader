@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
 import { spawn } from "node:child_process";
-import { buildVideoDownloadArgs, runVideoDownload } from "../src/lib/ytdlp";
+import { buildThumbnailArgs, buildVideoDownloadArgs, runVideoDownload } from "../src/lib/ytdlp";
 
 function fakeChild() {
   const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter };
@@ -101,5 +101,20 @@ describe("runVideoDownload", () => {
     child.emit("close", 1);
 
     await expect(promise).rejects.toThrow("ERROR: Video unavailable");
+  });
+});
+
+describe("buildThumbnailArgs", () => {
+  it("builds args that fetch only the thumbnail image", () => {
+    expect(
+      buildThumbnailArgs({ url: "https://example.com/v", outputTemplate: "/out/%(title)s.%(ext)s" }),
+    ).toEqual([
+      "--write-thumbnail",
+      "--skip-download",
+      "--no-playlist",
+      "-o",
+      "/out/%(title)s.%(ext)s",
+      "https://example.com/v",
+    ]);
   });
 });

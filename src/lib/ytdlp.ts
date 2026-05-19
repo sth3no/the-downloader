@@ -97,3 +97,43 @@ export function runVideoDownload(
     });
   });
 }
+
+export type ThumbnailDownloadArgs = {
+  url: string;
+  outputTemplate: string;
+};
+
+/** Build yt-dlp CLI args to fetch only a URL's thumbnail image; the video itself is skipped. */
+export function buildThumbnailArgs(a: ThumbnailDownloadArgs): string[] {
+  return ["--write-thumbnail", "--skip-download", "--no-playlist", "-o", a.outputTemplate, a.url];
+}
+
+export type ThumbnailResult = { filePath: string };
+
+/**
+ * Run yt-dlp to save only a URL's thumbnail. Resolves with the saved image path,
+ * parsed from yt-dlp's "Writing ... thumbnail ... to:" stdout line, on a zero exit;
+ * rejects with the stderr text on a non-zero exit. If the path line is not matched
+ * the promise still resolves, with an empty `filePath`.
+ */
+export function runThumbnailDownload(binaryPath: string, options: ThumbnailDownloadArgs): Promise<ThumbnailResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(binaryPath, buildThumbnailArgs(options), {
+      env: { ...process.env, PYTHONUNBUFFERED: "1" },
+    });
+    let filePath = "";
+    let stderr = "";
+    child.stdout.on("data", (data: Buffer) => {
+      for (const line of data.toString().split("\n")) {
+        const match = /Writing .*?thumbnail.*? to:\s*(.+)$/.exec(line.trim());
+        if (match) filePath = match[1].trim();
+      }
+    });
+    child.stderr.on("data", (data: Buffer) => (stderr += data.toString()));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve({ filePath });
+      else reject(new Error(stderr.trim() || `yt-dlp exited with code ${code}`));
+    });
+  });
+}
