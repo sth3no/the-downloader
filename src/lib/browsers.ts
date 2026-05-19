@@ -44,3 +44,17 @@ export function findFirefoxProfile(paths: PlatformPaths, ctx: ResolveContext = d
   }
   return best?.full ?? "";
 }
+
+/**
+ * Locate a Chromium-format browser's default profile. Returns `<base>/Default`
+ * when its `Cookies` (older Chromium) or `Network/Cookies` (newer Chromium)
+ * file exists; otherwise "".
+ */
+export function findChromiumProfile(paths: PlatformPaths, ctx: ResolveContext = defaultCtx()): string {
+  const rel = pickPath(paths, ctx.platform);
+  if (!rel) return "";
+  const profile = path.join(ctx.home, rel, "Default");
+  if (fs.existsSync(path.join(profile, "Cookies"))) return profile;
+  if (fs.existsSync(path.join(profile, "Network", "Cookies"))) return profile;
+  return "";
+}

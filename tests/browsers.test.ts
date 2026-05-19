@@ -8,7 +8,7 @@ vi.mock("node:fs", () => ({
 }));
 
 import * as fs from "node:fs";
-import { findFirefoxProfile } from "../src/lib/browsers";
+import { findChromiumProfile, findFirefoxProfile } from "../src/lib/browsers";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -93,5 +93,32 @@ describe("findFirefoxProfile", () => {
         { platform: "darwin", home: "/Users/x" },
       ),
     ).toBe(path.join(macBase, "p.default"));
+  });
+});
+
+describe("findChromiumProfile", () => {
+  const ctx = { platform: "win32" as NodeJS.Platform, home: "/home/u" };
+  const baseDir = path.join("/home/u", "AppData/Local/Arc/User Data");
+  const paths = { win: "AppData/Local/Arc/User Data" };
+
+  it("returns <base>/Default when <base>/Default/Cookies exists", () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === path.join(baseDir, "Default", "Cookies"));
+    expect(findChromiumProfile(paths, ctx)).toBe(path.join(baseDir, "Default"));
+  });
+
+  it("returns <base>/Default when <base>/Default/Network/Cookies exists", () => {
+    vi.mocked(fs.existsSync).mockImplementation(
+      (p) => String(p) === path.join(baseDir, "Default", "Network", "Cookies"),
+    );
+    expect(findChromiumProfile(paths, ctx)).toBe(path.join(baseDir, "Default"));
+  });
+
+  it("returns '' when neither cookies path exists", () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+    expect(findChromiumProfile(paths, ctx)).toBe("");
+  });
+
+  it("returns '' when the platform key is absent", () => {
+    expect(findChromiumProfile({ mac: "Library/Application Support/Arc/User Data" }, ctx)).toBe("");
   });
 });
