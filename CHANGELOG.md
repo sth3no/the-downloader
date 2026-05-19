@@ -1,5 +1,11 @@
 # Video Downloader Changelog
 
+## [Feat: Redesigned Download Form] - 2026-05-19
+
+- Rebuilt the **Download** command around a single adaptive form: paste a URL, pick a **Filetype** — Video, Audio, Image, Transcript, or Website — and the form shows just the options that filetype needs. The filetype is auto-detected and overridable, so a misdetected URL is one click from the right tool.
+- **Image** of a video URL now downloads the video's **thumbnail**; of a gallery URL, the whole gallery.
+- Added a folder picker to every download, an adaptive status line, and a **Video: Exact Format Selection** preference that unlocks per-format selection with file sizes.
+
 ## [Feat: Webpage Saving] - 2026-05-19
 
 - Added webpage saving — paste any non-video/gallery/music URL into **Download** or **Fast Download** and it is saved as a single self-contained `.html` file via monolith, with a Complete / Lightweight (no JavaScript) choice.

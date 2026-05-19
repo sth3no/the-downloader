@@ -4,7 +4,7 @@ Download videos, audio, image galleries, Spotify music, and complete webpages fr
 
 ## Commands
 
-- **Download** — paste a URL into a form, choose the format and quality, then download.
+- **Download** — paste a URL, choose what to grab (video, audio, image, transcript, or webpage) and the quality, then download.
 - **Fast Download** — pass a URL as a command argument and download it instantly using your saved defaults — no form.
 
 ## What you need

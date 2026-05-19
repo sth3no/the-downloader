@@ -59,8 +59,7 @@ export type VideoDownloadResult = { filePath: string };
  * Run yt-dlp for a media download. `onProgress` receives the download percentage
  * as yt-dlp reports it. Resolves with the downloaded file path on a zero exit;
  * rejects with the stderr text on a non-zero exit. Progress and the
- * `after_move:filepath` line are read from stdout, matching what `video-form.tsx`
- * parses today.
+ * `after_move:filepath` line are read from stdout.
  */
 export function runVideoDownload(
   binaryPath: string,

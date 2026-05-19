@@ -8,6 +8,8 @@ Handled by [yt-dlp](https://github.com/yt-dlp/yt-dlp) — YouTube, Twitch, Vimeo
 
 Full list: <https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md>
 
+In the **Download** command you can also grab just a video's **thumbnail** image — pick the *Image* filetype.
+
 ## Image galleries
 
 Handled by [gallery-dl](https://github.com/mikf/gallery-dl) — Reddit, Imgur, Pixiv, DeviantArt, Flickr, Instagram and hundreds more.
