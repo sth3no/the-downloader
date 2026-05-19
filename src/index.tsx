@@ -6,6 +6,7 @@ import { isValidUrl } from "./utils.js";
 import { VideoForm } from "./views/video-form.js";
 import { GalleryForm } from "./views/gallery-form.js";
 import { SpotifyForm } from "./views/spotify-form.js";
+import { WebpageForm } from "./views/webpage-form.js";
 
 const { autoLoadUrlFromClipboard, autoLoadUrlFromSelectedText, enableBrowserExtensionSupport } =
   getPreferenceValues<ExtensionPreferences>();
@@ -63,6 +64,9 @@ export default function Command(props: LaunchProps) {
   }
   if (type === "spotify") {
     return <SpotifyForm url={url} onUrlChange={handleUrlChange} />;
+  }
+  if (type === "webpage") {
+    return <WebpageForm url={url} onUrlChange={handleUrlChange} />;
   }
   return <VideoForm url={url} onUrlChange={handleUrlChange} />;
 }
