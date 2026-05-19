@@ -13,7 +13,7 @@ import {
 } from "@raycast/api";
 import { ExecaError, execa } from "execa";
 import { getWingetPath, homebrewPath, isMac, isWindows } from "../utils.js";
-import { HOMEBREW_FORMULAE, isManagedTool } from "../lib/tools.js";
+import { HOMEBREW_FORMULAE, isManagedTool, wingetIdFor } from "../lib/tools.js";
 import { downloadSpotdl } from "../lib/managed-binary.js";
 
 const macOSInstallGuide = (executable: string) => `
@@ -28,18 +28,16 @@ If you have homebrew installed, simply press **⏎** to have this extension inst
 To install homebrew, visit [this link](https://brew.sh)
 `;
 
-const windowsInstallGuide = (executable: string) => `# 🚨 Error: \`${executable}\` is not installed
+const windowsInstallGuide = (executable: string, wingetId: string) => `# 🚨 Error: \`${executable}\` is not installed
 
 Please press **⏎** to have this extension install it for you. Since these are heavy libraries, **it can take up to 2 minutes to install**.
-
-**Note:** \`yt-dlp\` bundles \`ffmpeg\` and \`ffprobe\` binaries.
-
+${executable === "ffmpeg" || executable === "ffprobe" ? "\n**Note:** `yt-dlp` bundles `ffmpeg` and `ffprobe` on Windows.\n" : ""}
 ## Windows Manual Installation Guide
 
 You can use the built-in Windows package manager, \`winget\`.
 
 \`\`\`bash
-winget install --id=yt-dlp.yt-dlp -e
+winget install --id=${wingetId} -e
 \`\`\`
 `;
 
@@ -62,8 +60,8 @@ export default function Installer({ executable, onRefresh }: { executable: strin
   }
   return (
     <Detail
-      actions={<AutoInstall onRefresh={onRefresh} />}
-      markdown={isMac ? macOSInstallGuide(executable) : windowsInstallGuide(executable)}
+      actions={<AutoInstall executable={executable} onRefresh={onRefresh} />}
+      markdown={isMac ? macOSInstallGuide(executable) : windowsInstallGuide(executable, wingetIdFor(executable))}
     />
   );
 }
@@ -112,7 +110,7 @@ function ManagedInstall({ executable, onRefresh }: { executable: string; onRefre
   );
 }
 
-function AutoInstall({ onRefresh }: { onRefresh: () => void }) {
+function AutoInstall({ executable, onRefresh }: { executable: string; onRefresh: () => void }) {
   const [isLoading, setIsLoading] = useState(false);
 
   return (
@@ -190,7 +188,7 @@ function AutoInstall({ onRefresh }: { onRefresh: () => void }) {
                 "install",
                 "--accept-source-agreements",
                 "--accept-package-agreements",
-                "--id=yt-dlp.yt-dlp",
+                `--id=${wingetIdFor(executable)}`,
                 "-e",
               ]);
               await installationToast.hide();
@@ -205,7 +203,7 @@ function AutoInstall({ onRefresh }: { onRefresh: () => void }) {
               if (isExecaError && error.exitCode === 2316632107) {
                 await showToast({
                   style: Toast.Style.Success,
-                  title: "yt-dlp is already installed",
+                  title: `${executable} is already installed`,
                   message: "Please configure the path in extension preferences",
                 });
               } else {
