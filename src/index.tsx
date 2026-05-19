@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BrowserExtension, Clipboard, Form, getPreferenceValues, getSelectedText } from "@raycast/api";
+import { BrowserExtension, Clipboard, Form, getPreferenceValues, getSelectedText, LaunchProps } from "@raycast/api";
 import { detectSource } from "./lib/detect.js";
 import { SourceType } from "./types.js";
 import { isValidUrl } from "./utils.js";
@@ -10,7 +10,7 @@ import { SpotifyForm } from "./views/spotify-form.js";
 const { autoLoadUrlFromClipboard, autoLoadUrlFromSelectedText, enableBrowserExtensionSupport } =
   getPreferenceValues<ExtensionPreferences>();
 
-export default function Command() {
+export default function Command(props: LaunchProps) {
   const [url, setUrl] = useState("");
   const [type, setType] = useState<SourceType>("video");
   const [autoLoadDone, setAutoLoadDone] = useState(false);
@@ -18,7 +18,12 @@ export default function Command() {
   useEffect(() => {
     (async () => {
       let loaded = "";
-      if (autoLoadUrlFromClipboard) {
+
+      // A URL handed off from the Fast Download command takes priority.
+      const contextUrl = (props.launchContext as { url?: string } | undefined)?.url;
+      if (contextUrl && isValidUrl(contextUrl)) loaded = contextUrl;
+
+      if (!loaded && autoLoadUrlFromClipboard) {
         const text = await Clipboard.readText();
         if (text && isValidUrl(text)) loaded = text;
       }
