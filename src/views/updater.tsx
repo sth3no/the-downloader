@@ -14,7 +14,7 @@ import {
 import { execa } from "execa";
 import { getSpotdlPath, getWingetPath, isMac, isWindows } from "../utils.js";
 import { downloadSpotdl, getInstalledVersion, getLatestRelease } from "../lib/managed-binary.js";
-import { HOMEBREW_FORMULAE, WINGET_PACKAGES } from "../lib/tools.js";
+import { friendlyNameFor, HOMEBREW_FORMULAE, WINGET_PACKAGES } from "../lib/tools.js";
 
 const { homebrewPath } = getPreferenceValues<ExtensionPreferences>();
 
@@ -63,7 +63,7 @@ export default function Updater() {
           .map(([cli, version]) => {
             const status =
               version === "not installed" ? "" : outdated[cli] ? `(outdated: ${outdated[cli]})` : "(up to date)";
-            return `${cli}: ${version === "" ? "Checking..." : version}${status ? ` ${status}` : ""}`;
+            return `${friendlyNameFor(cli)}: ${version === "" ? "Checking..." : version}${status ? ` ${status}` : ""}`;
           })
           .join("\n\n"),
         upgradingMessage,

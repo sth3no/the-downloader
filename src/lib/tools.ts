@@ -45,3 +45,8 @@ export function isManagedTool(executable: string): boolean {
 export function wingetIdFor(executable: string): string {
   return (TOOLS as Record<string, ToolSpec | undefined>)[executable]?.wingetId ?? "yt-dlp.yt-dlp";
 }
+
+/** The friendly tool name for a winget package ID (e.g. "Y2Z.Monolith" → "monolith"). Returns the input unchanged if it is not a winget package ID (e.g. a Homebrew formula name or "spotdl"). */
+export function friendlyNameFor(name: string): string {
+  return Object.values(TOOLS).find((tool) => tool.wingetId === name)?.id ?? name;
+}
