@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
 import { spawn } from "node:child_process";
-import { buildGalleryArgs, runGalleryDownload } from "../src/lib/gallerydl.js";
+import { buildGalleryArgs, isLoginRequiredError, runGalleryDownload } from "../src/lib/gallerydl.js";
 
 function fakeChild() {
   const child = new EventEmitter() as any;
@@ -63,5 +63,30 @@ describe("runGalleryDownload", () => {
     child.emit("close", 1);
 
     await expect(promise).rejects.toThrow("unsupported URL");
+  });
+});
+
+describe("isLoginRequiredError", () => {
+  it("detects an Instagram-style 'HTTP redirect to login page' error", () => {
+    const err = new Error("[instagram][error] HTTP redirect to login page (https://www.instagram.com/accounts/login/)");
+    expect(isLoginRequiredError(err)).toBe(true);
+  });
+
+  it("detects a 'login required' message", () => {
+    expect(isLoginRequiredError(new Error("[twitter][error] Login required to access this resource"))).toBe(true);
+  });
+
+  it("detects an 'authentication required' message", () => {
+    expect(isLoginRequiredError(new Error("authentication required"))).toBe(true);
+  });
+
+  it("returns false for unrelated errors", () => {
+    expect(isLoginRequiredError(new Error("unsupported URL"))).toBe(false);
+    expect(isLoginRequiredError(new Error("network timeout"))).toBe(false);
+  });
+
+  it("returns false for non-Error values", () => {
+    expect(isLoginRequiredError("string error")).toBe(false);
+    expect(isLoginRequiredError(undefined)).toBe(false);
   });
 });

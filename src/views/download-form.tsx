@@ -10,7 +10,9 @@ import {
   Toast,
   getPreferenceValues,
   open,
+  openExtensionPreferences,
   showHUD,
+  showInFinder,
   showToast,
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
@@ -18,11 +20,13 @@ import { detectSource } from "../lib/detect.js";
 import { Filetype, FILETYPES, defaultFiletype, requiredTools, resolveTool } from "../lib/filetype.js";
 import { composeVideoFormat } from "../lib/video-format.js";
 import { fetchVideoInfo, runThumbnailDownload, runVideoDownload } from "../lib/ytdlp.js";
-import { runGalleryDownload } from "../lib/gallerydl.js";
+import { isLoginRequiredError, runGalleryDownload } from "../lib/gallerydl.js";
+import { resolveBrowser } from "../lib/browsers.js";
 import { runSpotdlDownload } from "../lib/spotdl.js";
 import { runMonolithSave, webpageFilename } from "../lib/monolith.js";
 import extractTranscript from "../transcript.js";
 import {
+  downloadPath,
   formatHHMM,
   getDenoPath,
   getFormats,
@@ -166,7 +170,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
     }
     const ft = values.filetype as Filetype;
     const src = detectSource(submitUrl);
-    const folder = (values.destination as string[] | undefined)?.[0] ?? prefs.downloadPath;
+    const folder = (values.destination as string[] | undefined)?.[0] ?? downloadPath;
 
     if (liveStream && (ft === "video" || ft === "audio")) {
       await showToast({ style: Toast.Style.Failure, title: "Live streams are not supported" });
@@ -184,7 +188,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         toast.style = Toast.Style.Success;
         toast.title = "Webpage Saved";
         toast.message = path.basename(filePath);
-        toast.primaryAction = { title: "Open Folder", onAction: () => open(folder) };
+        toast.primaryAction = { title: "Open Folder", onAction: () => showInFinder(filePath) };
         toast.secondaryAction = { title: "Open File", onAction: () => open(filePath) };
       } catch (error) {
         failToast(toast, error);
@@ -210,11 +214,21 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
     }
 
     if (ft === "image" && src === "gallery") {
+      const browser = resolveBrowser(prefs.cookiesFromBrowser, prefs.cookiesFromBrowserCustom);
       const toast = await showToast({ style: Toast.Style.Animated, title: "Downloading Gallery", message: "0 files" });
+
+      if (browser.warning) {
+        toast.style = Toast.Style.Failure;
+        toast.title = "Cookies from Browser";
+        toast.message = browser.warning;
+        toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
+        return;
+      }
+
       try {
         const { files } = await runGalleryDownload(
           getGalleryDlPath(),
-          { url: submitUrl, destination: folder, cookiesFromBrowser: prefs.cookiesFromBrowser || undefined },
+          { url: submitUrl, destination: folder, cookiesFromBrowser: browser.spec || undefined },
           (p) => {
             toast.message = `${p.files} files`;
           },
@@ -224,7 +238,16 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         toast.message = `${files} files`;
         toast.primaryAction = { title: "Open Folder", onAction: () => open(folder) };
       } catch (error) {
-        failToast(toast, error);
+        if (isLoginRequiredError(error)) {
+          toast.style = Toast.Style.Failure;
+          toast.title = "Login Required";
+          toast.message = browser.label
+            ? `Sign in to the site in ${browser.label}, or change the browser in preferences.`
+            : "Set Gallery: Cookies from Browser in preferences to use your browser's session.";
+          toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
+        } else {
+          failToast(toast, error);
+        }
       }
       return;
     }
@@ -239,7 +262,10 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         toast.style = Toast.Style.Success;
         toast.title = "Thumbnail Saved";
         toast.message = filePath ? path.basename(filePath) : undefined;
-        toast.primaryAction = { title: "Open Folder", onAction: () => open(folder) };
+        toast.primaryAction = {
+          title: "Open Folder",
+          onAction: () => (filePath ? showInFinder(filePath) : open(folder)),
+        };
         if (filePath) {
           toast.secondaryAction = { title: "Open File", onAction: () => open(filePath) };
         }
@@ -315,7 +341,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       toast.message = filePath ? path.basename(filePath) : undefined;
       toast.primaryAction = {
         title: "Open Folder",
-        onAction: () => open(filePath ? path.dirname(filePath) : folder),
+        onAction: () => (filePath ? showInFinder(filePath) : open(folder)),
       };
       if (filePath) {
         toast.secondaryAction = {
@@ -433,7 +459,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             allowMultipleSelection={false}
             canChooseDirectories
             canChooseFiles={false}
-            defaultValue={[prefs.downloadPath]}
+            defaultValue={[downloadPath]}
           />
         </>
       )}

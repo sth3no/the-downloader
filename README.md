@@ -29,3 +29,7 @@ spotDL is not on Homebrew — the extension downloads its prebuilt binary direct
 ## Supported sites
 
 See [SUPPORTED_SITES.md](SUPPORTED_SITES.md).
+
+## Login-gated galleries
+
+To download from sites that require a login, point the extension at a browser you're already signed into. See [BROWSER_COOKIES.md](BROWSER_COOKIES.md).

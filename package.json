@@ -187,12 +187,28 @@
       "required": false,
       "data": [
         { "title": "None", "value": "" },
-        { "title": "Safari", "value": "safari" },
         { "title": "Chrome", "value": "chrome" },
+        { "title": "Chromium", "value": "chromium" },
         { "title": "Firefox", "value": "firefox" },
+        { "title": "Safari", "value": "safari" },
+        { "title": "Edge", "value": "edge" },
         { "title": "Brave", "value": "brave" },
-        { "title": "Edge", "value": "edge" }
+        { "title": "Opera", "value": "opera" },
+        { "title": "Vivaldi", "value": "vivaldi" },
+        { "title": "LibreWolf", "value": "librewolf" },
+        { "title": "Arc", "value": "arc" },
+        { "title": "Zen", "value": "zen" },
+        { "title": "Floorp", "value": "floorp" },
+        { "title": "Custom", "value": "custom" }
       ]
+    },
+    {
+      "name": "cookiesFromBrowserCustom",
+      "title": "Gallery: Custom Browser Spec",
+      "description": "Used when 'Cookies from Browser' is set to Custom. Pass a gallery-dl --cookies-from-browser spec, e.g. `firefox:/path/to/profile` or `chromium:C:\\Users\\…\\User Data\\Default`.",
+      "type": "textfield",
+      "default": "",
+      "required": false
     },
     {
       "name": "homebrewPath",
