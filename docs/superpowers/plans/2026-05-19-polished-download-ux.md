@@ -208,6 +208,8 @@ git commit -m "Add lib/filetype.ts — the Filetype model" -m "Co-Authored-By: C
 
 Add `buildThumbnailArgs` + `runThumbnailDownload` to `lib/ytdlp.ts` — the "image" filetype's path for a video URL.
 
+> **Note (plan vs. spec):** this task deliberately uses the simpler `--write-thumbnail --skip-download` (native thumbnail format) instead of the spec's original `--convert-thumbnails jpg` + `--ffmpeg-location`. The spec's own implementation note sanctioned dropping `--convert-thumbnails`; doing so keeps the route free of an ffmpeg dependency and the stdout path-capture simple. The spec has been updated to match.
+
 **Files:**
 - Modify: `src/lib/ytdlp.ts`
 - Test: `tests/ytdlp.test.ts`

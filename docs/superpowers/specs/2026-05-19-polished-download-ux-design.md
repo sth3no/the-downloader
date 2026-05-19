@@ -205,11 +205,13 @@ rows need only yt-dlp + ffmpeg.
 Add a thumbnail download path next to the existing `buildVideoDownloadArgs` /
 `runVideoDownload`, keeping the module `@raycast/api`-free:
 
-- **`buildThumbnailArgs(o: { url: string; outputTemplate: string; ffmpegPath: string }): string[]`**
-  — pure. Builds `yt-dlp --write-thumbnail --skip-download --convert-thumbnails jpg
-  --ffmpeg-location <ffmpeg> -o <template> <url>`. `--skip-download` fetches only
-  the thumbnail; `--convert-thumbnails jpg` normalises the extension so the saved
-  file is predictable (it uses ffmpeg, which is a required tool for this route).
+- **`buildThumbnailArgs(o: { url: string; outputTemplate: string }): string[]`**
+  — pure. Builds `yt-dlp --write-thumbnail --skip-download --no-playlist -o
+  <template> <url>`. `--skip-download` fetches only the thumbnail; `--no-playlist`
+  keeps a playlist-item URL to its single thumbnail. The thumbnail is saved in its
+  native format (`.webp` / `.jpg` / `.png`, per the source) — there is no
+  `--convert-thumbnails` step, so the route needs no ffmpeg. (See Implementation
+  notes.)
 - **`runThumbnailDownload(binaryPath, options, ...): Promise<{ filePath: string }>`**
   — spawns yt-dlp with `buildThumbnailArgs`, accumulates stderr, resolves with the
   saved image path on a zero exit and rejects with the stderr text otherwise.
@@ -445,8 +447,7 @@ Unit tests only, vitest, pure modules — consistent with the existing `tests/`.
   `audioPreferred` branch), `resolveTool` (each row of the routing table), and
   `requiredTools` (each selection's tool set).
 - **`tests/ytdlp.test.ts`** (extended) — `buildThumbnailArgs`: `--write-thumbnail`,
-  `--skip-download`, `--convert-thumbnails jpg`, the `-o` template, the
-  `--ffmpeg-location`, and the URL last.
+  `--skip-download`, `--no-playlist`, the `-o` template, and the URL last.
 - `download-form.tsx`, `index.tsx`, and the process glue are verified by
   `npm run build` and the manual dev pass — views are not unit-tested elsewhere in
   this project either.
@@ -486,11 +487,11 @@ them.
 
 ## Implementation notes (verify during build)
 
-- **yt-dlp thumbnail path.** Confirm via `yt-dlp --write-thumbnail --skip-download`
-  which stdout line carries the saved (and converted) thumbnail path, so
-  `runThumbnailDownload` can resolve `filePath`. If parsing is unreliable, fall
-  back to deriving the path from the output template, or drop `--convert-thumbnails`
-  and accept the native extension.
+- **yt-dlp thumbnail path.** `runThumbnailDownload` resolves `filePath` by parsing
+  the `Writing … thumbnail … to:` line from yt-dlp's stdout. Confirm during the
+  manual dev pass that yt-dlp's wording still matches the regex; the runner
+  resolves with an empty `filePath` if no line matches, so a missed parse degrades
+  gracefully (the download still succeeds) rather than failing.
 - **`useForm` vs controlled state.** `video-form.tsx` uses `@raycast/utils`'
   `useForm`; the other three forms use plain `id`-based fields. For a form whose
   fields are conditionally rendered, the plan should pick one approach — if
