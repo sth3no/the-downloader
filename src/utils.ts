@@ -44,14 +44,6 @@ export const getDenoPath = () => resolveBinary("deno", denoPathPreference);
 export const getSpotdlPath = () => resolveBinary("spotdl", spotDlPathPreference, environment.supportPath);
 export const getMonolithPath = () => resolveBinary("monolith", monolithPathPreference);
 
-export type DownloadOptions = {
-  url: string;
-  format: string;
-  copyToClipboard: boolean;
-  startTime?: string;
-  endTime?: string;
-};
-
 export function formatHHMM(seconds: number) {
   const duration = intervalToDuration({ start: 0, end: seconds * 1000 });
 

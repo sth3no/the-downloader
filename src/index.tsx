@@ -1,20 +1,14 @@
 import { useEffect, useState } from "react";
 import { BrowserExtension, Clipboard, Form, getPreferenceValues, getSelectedText, LaunchProps } from "@raycast/api";
-import { detectSource } from "./lib/detect.js";
-import { SourceType } from "./types.js";
 import { isValidUrl } from "./utils.js";
-import { VideoForm } from "./views/video-form.js";
-import { GalleryForm } from "./views/gallery-form.js";
-import { SpotifyForm } from "./views/spotify-form.js";
-import { WebpageForm } from "./views/webpage-form.js";
+import { DownloadForm } from "./views/download-form.js";
 
 const { autoLoadUrlFromClipboard, autoLoadUrlFromSelectedText, enableBrowserExtensionSupport } =
   getPreferenceValues<ExtensionPreferences>();
 
 export default function Command(props: LaunchProps) {
-  const [url, setUrl] = useState("");
-  const [type, setType] = useState<SourceType>("video");
-  const [autoLoadDone, setAutoLoadDone] = useState(false);
+  const [loadedUrl, setLoadedUrl] = useState("");
+  const [startupDone, setStartupDone] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -44,29 +38,12 @@ export default function Command(props: LaunchProps) {
           /* no browser extension */
         }
       }
-      if (loaded) {
-        setUrl(loaded);
-        setType(detectSource(loaded));
-      }
-      setAutoLoadDone(true);
+      if (loaded) setLoadedUrl(loaded);
+      setStartupDone(true);
     })();
   }, []);
 
-  function handleUrlChange(next: string) {
-    setUrl(next);
-    if (isValidUrl(next)) setType(detectSource(next));
-  }
+  if (!startupDone) return <Form isLoading />;
 
-  if (!autoLoadDone) return <Form isLoading />;
-
-  if (type === "gallery") {
-    return <GalleryForm url={url} onUrlChange={handleUrlChange} />;
-  }
-  if (type === "spotify") {
-    return <SpotifyForm url={url} onUrlChange={handleUrlChange} />;
-  }
-  if (type === "webpage") {
-    return <WebpageForm url={url} onUrlChange={handleUrlChange} />;
-  }
-  return <VideoForm url={url} onUrlChange={handleUrlChange} />;
+  return <DownloadForm initialUrl={loadedUrl} />;
 }
