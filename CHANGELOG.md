@@ -1,5 +1,9 @@
 # Video Downloader Changelog
 
+## [Feat: Webpage Saving] - 2026-05-19
+
+- Added webpage saving — paste any non-video/gallery/music URL into **Download** or **Fast Download** and it is saved as a single self-contained `.html` file via monolith, with a Complete / Lightweight (no JavaScript) choice.
+
 ## [Feat: Fast Download Command] - 2026-05-19
 
 - Added the **Fast Download** command — pass a URL as an argument and download it instantly using your saved defaults, with no form.

@@ -18,6 +18,10 @@ Full list: <https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.m
 
 Handled by [spotDL](https://github.com/spotDL/spotify-downloader) — paste a Spotify track, album, or playlist link and the audio is fetched from YouTube with metadata and album art.
 
+## Webpages
+
+Any URL that isn't a video, gallery, or music source is saved by [monolith](https://github.com/Y2Z/monolith) as a single self-contained `.html` file — every image, stylesheet, and script embedded, so the page opens offline exactly as it looked online.
+
 ## Not supported in v1
 
 Sites that require an in-app login or OAuth sign-in are not supported in v1.
