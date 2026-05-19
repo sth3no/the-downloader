@@ -113,7 +113,12 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
     async (u: string, fetchIt: boolean) => {
       if (!fetchIt) return undefined;
       const denoPath = getDenoPath();
-      const data = await fetchVideoInfo(getytdlPath(), u, prefs.forceIpv4, fs.existsSync(denoPath) ? denoPath : undefined);
+      const data = await fetchVideoInfo(
+        getytdlPath(),
+        u,
+        prefs.forceIpv4,
+        fs.existsSync(denoPath) ? denoPath : undefined,
+      );
       return { ...data, title: sanitizeVideoTitle(data.title) };
     },
     [url, shouldFetchMeta],
@@ -245,7 +250,11 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
     }
 
     if (ft === "audio" && src === "spotify") {
-      const toast = await showToast({ style: Toast.Style.Animated, title: "Downloading from Spotify", message: "0 tracks" });
+      const toast = await showToast({
+        style: Toast.Style.Animated,
+        title: "Downloading from Spotify",
+        message: "0 tracks",
+      });
       try {
         const { tracks } = await runSpotdlDownload(
           getSpotdlPath(),
