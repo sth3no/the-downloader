@@ -16,9 +16,11 @@ import { composeVideoFormat } from "./lib/video-format.js";
 import { runVideoDownload } from "./lib/ytdlp.js";
 import { runGalleryDownload } from "./lib/gallerydl.js";
 import { runSpotdlDownload } from "./lib/spotdl.js";
+import { runMonolithSave, webpageFilename } from "./lib/monolith.js";
 import {
   getDenoPath,
   getGalleryDlPath,
+  getMonolithPath,
   getSpotdlPath,
   getffmpegPath,
   getffprobePath,
@@ -59,7 +61,8 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
     return;
   }
 
-  const { downloadPath, cookiesFromBrowser, spotifyAudioFormat } = getPreferenceValues<ExtensionPreferences>();
+  const { downloadPath, cookiesFromBrowser, spotifyAudioFormat, webpageSaveMode } =
+    getPreferenceValues<ExtensionPreferences>();
   const type = detectSource(url);
 
   if (type === "gallery") {
@@ -120,7 +123,32 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
     return;
   }
 
-  // video — the default route (detectSource falls back to "video" for unknown hosts)
+  if (type === "webpage") {
+    const monolithPath = getMonolithPath();
+    if (!fs.existsSync(monolithPath)) return handOff("monolith", url);
+
+    const outputPath = path.join(downloadPath, webpageFilename(url));
+    const toast = await showToast({ style: Toast.Style.Animated, title: "Saving Webpage" });
+    try {
+      const { filePath } = await runMonolithSave(monolithPath, {
+        url,
+        outputPath,
+        noJavaScript: webpageSaveMode === "lightweight",
+      });
+      toast.style = Toast.Style.Success;
+      toast.title = "Saved";
+      toast.message = path.basename(filePath);
+      toast.primaryAction = { title: "Open Folder", onAction: () => open(downloadPath) };
+    } catch (error) {
+      toast.style = Toast.Style.Failure;
+      toast.title = "Save Failed";
+      toast.message = errorMessage(error);
+      toast.primaryAction = { title: "Copy Error", onAction: () => Clipboard.copy(errorMessage(error)) };
+    }
+    return;
+  }
+
+  // video — the default route (detectSource routes unknown hosts to "webpage", handled above)
   const ytdlPath = getytdlPath();
   const ffmpegPath = getffmpegPath();
   const ffprobePath = getffprobePath();
