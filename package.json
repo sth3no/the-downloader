@@ -27,6 +27,17 @@
       "subtitle": "The Downloader",
       "description": "Download video, audio, galleries, or transcripts",
       "mode": "view"
+    },
+    {
+      "name": "fast-download",
+      "title": "Fast Download",
+      "subtitle": "The Downloader",
+      "description": "Paste a URL and download it instantly using your saved defaults — no form.",
+      "mode": "no-view",
+      "keywords": ["quick", "instant", "paste"],
+      "arguments": [
+        { "name": "url", "type": "text", "placeholder": "URL", "required": true }
+      ]
     }
   ],
   "tools": [
