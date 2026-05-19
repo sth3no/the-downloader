@@ -14,6 +14,18 @@ export function buildGalleryArgs(o: GalleryDownloadOptions): string[] {
   return args;
 }
 
+/**
+ * Detect a gallery-dl error caused by the site requiring a logged-in session
+ * (Instagram redirects to its login page, Twitter prints "Login required" when
+ * the resource is gated, etc.). The fix is to set the Cookies from Browser
+ * preference so gallery-dl uses the user's existing browser session.
+ */
+export function isLoginRequiredError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /redirect to login|login required|authentication required/i.test(error.message);
+}
+
+
 export type GalleryProgress = { files: number };
 
 /** Run gallery-dl; onProgress fires as files land. Resolves with the count or rejects with stderr. */
