@@ -206,13 +206,7 @@ async function upgrade() {
     const wingetPath = await getWingetPath();
     for (const pkg of WINGET_PACKAGES) {
       try {
-        await execa(wingetPath, [
-          "upgrade",
-          "--id",
-          pkg,
-          "--accept-source-agreements",
-          "--accept-package-agreements",
-        ]);
+        await execa(wingetPath, ["upgrade", "--id", pkg, "--accept-source-agreements", "--accept-package-agreements"]);
       } catch {
         // A package with no available upgrade exits non-zero — skip it.
       }
