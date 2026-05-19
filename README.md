@@ -2,6 +2,11 @@
 
 Download videos, audio, image galleries, and Spotify music from the web — straight from Raycast.
 
+## Commands
+
+- **Download** — paste a URL into a form, choose the format and quality, then download.
+- **Fast Download** — pass a URL as a command argument and download it instantly using your saved defaults — no form.
+
 ## What you need
 
 The Downloader drives a few command-line tools:

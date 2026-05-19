@@ -1,5 +1,9 @@
 # Video Downloader Changelog
 
+## [Feat: Fast Download Command] - 2026-05-19
+
+- Added the **Fast Download** command — pass a URL as an argument and download it instantly using your saved defaults, with no form.
+
 ## [Improvement] - 2026-01-28
 
 - Added MP3 format option for audio downloads
