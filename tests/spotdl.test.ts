@@ -35,6 +35,59 @@ describe("buildSpotdlArgs", () => {
     ]);
   });
 
+  it("wraps the output template in a {list-name}/ folder for playlist URLs", () => {
+    const args = buildSpotdlArgs({
+      url: "https://open.spotify.com/playlist/30Gyf3ILlOAOGxFeK6xWew",
+      destination: "/Downloads",
+      format: "mp3",
+      ffmpegPath: "/ff",
+    });
+    const i = args.indexOf("--output");
+    expect(i).toBeGreaterThan(-1);
+    expect(args[i + 1]).toContain("{list-name}");
+    expect(args[i + 1]).toContain("{artists} - {title}.{output-ext}");
+  });
+
+  it("also wraps playlist Spotify URIs", () => {
+    const args = buildSpotdlArgs({
+      url: "spotify:playlist:30Gyf3ILlOAOGxFeK6xWew",
+      destination: "/d",
+      format: "mp3",
+      ffmpegPath: "/ff",
+    });
+    const i = args.indexOf("--output");
+    expect(args[i + 1]).toContain("{list-name}");
+  });
+
+  it("also wraps localized open.spotify.com playlist URLs", () => {
+    // e.g. /cs/playlist/... when opened from Czech account
+    const args = buildSpotdlArgs({
+      url: "https://open.spotify.com/cs/playlist/30Gyf3ILlOAOGxFeK6xWew",
+      destination: "/d",
+      format: "mp3",
+      ffmpegPath: "/ff",
+    });
+    const i = args.indexOf("--output");
+    expect(args[i + 1]).toContain("{list-name}");
+  });
+
+  it("does NOT wrap track or album URLs in a {list-name}/ folder", () => {
+    for (const url of [
+      "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC",
+      "https://open.spotify.com/album/30Gyf3ILlOAOGxFeK6xWew",
+      "spotify:track:4uLU6hMCjMI75M1A2tKUQC",
+    ]) {
+      const args = buildSpotdlArgs({
+        url,
+        destination: "/d",
+        format: "mp3",
+        ffmpegPath: "/ff",
+      });
+      const i = args.indexOf("--output");
+      expect(args[i + 1]).not.toContain("{list-name}");
+    }
+  });
+
   it("passes the chosen audio format through", () => {
     expect(
       buildSpotdlArgs({

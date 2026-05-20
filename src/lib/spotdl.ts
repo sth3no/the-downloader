@@ -19,21 +19,30 @@ export type SpotdlDownloadOptions = {
   userAuth?: boolean;
 };
 
+/** Matches both `https://open.spotify.com[/<locale>]/playlist/...` URLs and `spotify:playlist:...` URIs. */
+const PLAYLIST_URL = /(?:\/|:)playlist(?:\/|:)/i;
+
 /**
  * Build spotDL CLI args. Files are written as `<artists> - <title>.<ext>` in
- * the destination. When both Spotify API credentials are provided, they are
- * appended together with `--use-official-api` so spotDL talks only to the
- * Spotify Web API. Without that flag spotDL still falls into librespot for
- * track-hash checks (`_get_auth_vars` → "Could not get session auth tokens"),
- * which depends on a third-party host (`code.thetadev.de`) for current secrets
- * and outdated bundled fallbacks — both broken in practice.
+ * the destination. For playlist URLs the template is wrapped in a `{list-name}/`
+ * subfolder so a multi-track download lands in its own directory instead of
+ * scattering across the download root. When both Spotify API credentials are
+ * provided, they are appended together with `--use-official-api` so spotDL talks
+ * only to the Spotify Web API. Without that flag spotDL still falls into
+ * librespot for track-hash checks (`_get_auth_vars` → "Could not get session
+ * auth tokens"), which depends on a third-party host (`code.thetadev.de`) for
+ * current secrets and outdated bundled fallbacks — both broken in practice.
  */
 export function buildSpotdlArgs(o: SpotdlDownloadOptions): string[] {
+  const isPlaylist = PLAYLIST_URL.test(o.url);
+  const template = isPlaylist
+    ? "{list-name}/{artists} - {title}.{output-ext}"
+    : "{artists} - {title}.{output-ext}";
   const args = [
     "download",
     o.url,
     "--output",
-    path.join(o.destination, "{artists} - {title}.{output-ext}"),
+    path.join(o.destination, template),
     "--format",
     o.format,
     "--ffmpeg",

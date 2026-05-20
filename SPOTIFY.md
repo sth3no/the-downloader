@@ -69,7 +69,7 @@ Four gotchas:
 
 If a public-looking playlist returns "0 tracks", check whether it's actually public — open it in a private/incognito browser tab while logged out. If you can't see it there, it's private to your account.
 
-Files land in your configured download folder, named `<Artists> - <Title>.<ext>`. The audio itself is sourced from YouTube Music via yt-dlp — that's how spotDL works under the hood; Spotify doesn't expose raw audio.
+Track and album downloads land directly in your configured download folder, named `<Artists> - <Title>.<ext>`. Playlist downloads land in a subfolder named after the playlist (e.g. `Downloads/My Mix/<Artists> - <Title>.<ext>`) so a multi-track grab doesn't scatter across the root. The audio itself is sourced from YouTube Music via yt-dlp — that's how spotDL works under the hood; Spotify doesn't expose raw audio.
 
 ## Troubleshooting
 
