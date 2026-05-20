@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
 import { spawn } from "node:child_process";
-import { buildSpotdlArgs, runSpotdlDownload } from "../src/lib/spotdl";
+import { buildSpotdlArgs, runSpotdlDownload, summarizeSpotdlError, SpotdlDownloadError } from "../src/lib/spotdl";
 
 function fakeChild() {
   const child = new EventEmitter() as any;
@@ -215,6 +215,30 @@ describe("runSpotdlDownload", () => {
     await expect(promise).rejects.toThrow("AudioProviderError");
   });
 
+  it("rejects with a SpotdlDownloadError carrying tracks downloaded before failure", async () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const promise = runSpotdlDownload(
+      "/support/spotdl",
+      { url: "https://open.spotify.com/playlist/x", destination: "/tmp", format: "mp3", ffmpegPath: "/ff" },
+      vi.fn(),
+    );
+
+    child.stdout.emit("data", Buffer.from('Downloaded "A - 1"\nDownloaded "A - 2"\nDownloaded "A - 3"\n'));
+    child.stdout.emit("data", Buffer.from("HTTP Error for GET /v1/playlists/x/items returned 403 due to Forbidden\n"));
+    child.emit("close", 1);
+
+    await expect(promise).rejects.toBeInstanceOf(SpotdlDownloadError);
+    try {
+      await promise;
+    } catch (e) {
+      const err = e as SpotdlDownloadError;
+      expect(err.tracks).toBe(3);
+      expect(err.rawOutput).toContain("403");
+    }
+  });
+
   it("rejects with a watchdog error when spotdl produces no output for the idle window", async () => {
     // Mirrors the silent --user-auth hang we saw on Windows: spotdl prints
     // "Processing query: ..." and then blocks forever waiting on an OAuth
@@ -262,5 +286,50 @@ describe("runSpotdlDownload", () => {
     child.emit("close", 1);
 
     await expect(promise).rejects.toThrow("Could not find any results for the query");
+  });
+});
+
+describe("summarizeSpotdlError", () => {
+  it("maps 403 Forbidden to a private-playlist explanation", () => {
+    const s = summarizeSpotdlError("HTTP Error for GET /v1/playlists/x/items returned 403 due to Forbidden");
+    expect(s.title.toLowerCase()).toContain("forbidden");
+    expect(s.message.toLowerCase()).toContain("private");
+    expect(s.action).toBe("open-setup-guide");
+  });
+
+  it("maps 404 Not Found to an enable-user-auth hint", () => {
+    const s = summarizeSpotdlError("HTTP Error for GET /v1/playlists/x/items returned 404");
+    expect(s.title.toLowerCase()).toMatch(/not found|404/);
+    expect(s.message.toLowerCase()).toMatch(/user authentication|user-auth|private/);
+    expect(s.action).toBe("open-setup-guide");
+  });
+
+  it("maps 'Could not get session auth tokens' to a missing-credentials hint", () => {
+    const s = summarizeSpotdlError(
+      "BaseClientError: Could not get session auth tokens",
+    );
+    expect(s.message.toLowerCase()).toMatch(/client id|client secret|credentials/);
+    expect(s.action).toBe("open-preferences");
+  });
+
+  it("maps 'redirect_uri Not matching' to a Dev-app config hint", () => {
+    const s = summarizeSpotdlError("INVALID_CLIENT: redirect_uri: Not matching configuration");
+    expect(s.message.toLowerCase()).toMatch(/redirect uri|127\.0\.0\.1:9900/);
+    expect(s.action).toBe("open-setup-guide");
+  });
+
+  it("falls back to the last non-empty line for unknown errors", () => {
+    const s = summarizeSpotdlError(
+      "Some leading noise\n\n+----- traceback -----+\nFooError: something specific went wrong\n",
+    );
+    expect(s.message).toContain("something specific went wrong");
+    // No specific action for unknown errors.
+    expect(s.action).toBeUndefined();
+  });
+
+  it("handles empty/whitespace output without crashing", () => {
+    const s = summarizeSpotdlError("   \n  \n");
+    expect(s.title).toBeTruthy();
+    expect(s.message).toBeTruthy();
   });
 });

@@ -62,6 +62,89 @@ export function buildSpotdlArgs(o: SpotdlDownloadOptions): string[] {
 export type SpotdlProgress = { tracks: number };
 
 /**
+ * Structured summary of a spotDL failure — what to show in the toast and which
+ * follow-up action best helps the user resolve it. Built from the raw stdout/
+ * stderr by pattern-matching common spotDL/Spotify error signatures.
+ */
+export type SpotdlErrorSummary = {
+  title: string;
+  message: string;
+  /** Follow-up to surface as the toast's secondary action. */
+  action?: "open-preferences" | "open-setup-guide";
+};
+
+/**
+ * Parse a chunk of spotDL output and produce a human-readable summary. The toast
+ * shows this instead of dumping the Python traceback. The raw output stays
+ * accessible via `SpotdlDownloadError.rawOutput` so the user can still copy the
+ * full text via the Copy action.
+ */
+export function summarizeSpotdlError(rawOutput: string): SpotdlErrorSummary {
+  if (/returned\s+403|\bForbidden\b/i.test(rawOutput)) {
+    return {
+      title: "Spotify: 403 Forbidden",
+      message:
+        "This playlist is private and not owned by you (or it's a Spotify-curated mix). Ask the owner to make it public, or pick a different playlist.",
+      action: "open-setup-guide",
+    };
+  }
+  if (/returned\s+404|\bNot Found\b/i.test(rawOutput)) {
+    return {
+      title: "Spotify: 404 Not Found",
+      message:
+        "The playlist isn't reachable with the current auth. If it's yours, enable 'Spotify: User Authentication' in preferences; otherwise it may be private to someone else.",
+      action: "open-setup-guide",
+    };
+  }
+  if (/Could not get session auth tokens/i.test(rawOutput)) {
+    return {
+      title: "Spotify credentials missing or rejected",
+      message:
+        "Set 'Spotify: Client ID' and 'Spotify: Client Secret' in extension preferences. See SPOTIFY.md for the one-minute setup.",
+      action: "open-preferences",
+    };
+  }
+  if (/redirect_uri.*Not\s*matching/i.test(rawOutput)) {
+    return {
+      title: "Spotify redirect URI mismatch",
+      message:
+        "Add http://127.0.0.1:9900/ to your Spotify Dev app's Redirect URIs (developer.spotify.com → your app → Settings).",
+      action: "open-setup-guide",
+    };
+  }
+  const lastLine = rawOutput
+    .split("\n")
+    .map((l) => l.replace(/[|+\-\s]+$/g, "").trim())
+    .filter((l) => l.length > 0 && !/^[|+\-]+$/.test(l))
+    .pop();
+  return {
+    title: "Download Failed",
+    message: lastLine?.slice(0, 300) || "spotdl exited without a recognizable error message.",
+  };
+}
+
+/**
+ * Error thrown when spotDL exits non-zero. Carries the raw output so the user
+ * can copy the full traceback, the parsed summary so the toast can show a
+ * useful message, and the count of tracks already downloaded before the
+ * failure (partial-progress info that would otherwise be lost on reject).
+ */
+export class SpotdlDownloadError extends Error {
+  readonly tracks: number;
+  readonly rawOutput: string;
+  readonly summary: SpotdlErrorSummary;
+
+  constructor(tracks: number, rawOutput: string) {
+    const summary = summarizeSpotdlError(rawOutput);
+    super(summary.message);
+    this.name = "SpotdlDownloadError";
+    this.tracks = tracks;
+    this.rawOutput = rawOutput;
+    this.summary = summary;
+  }
+}
+
+/**
  * Kill spotdl after this long with no stdout/stderr output. Real downloads emit
  * progress lines well within this window even on slow networks. A silent gap
  * past it means spotdl is wedged (e.g. waiting on an OAuth callback that won't
@@ -138,7 +221,10 @@ export function runSpotdlDownload(
     child.on("close", (code) => {
       settle(() => {
         if (code === 0) resolve({ tracks });
-        else reject(new Error(stderr.trim() || stdout.trim() || `spotdl exited with code ${code}`));
+        else {
+          const rawOutput = stderr.trim() || stdout.trim() || `spotdl exited with code ${code}`;
+          reject(new SpotdlDownloadError(tracks, rawOutput));
+        }
       });
     });
   });

@@ -18,7 +18,7 @@ import { composeVideoFormat } from "./lib/video-format.js";
 import { runVideoDownload } from "./lib/ytdlp.js";
 import { isLoginRequiredError, runGalleryDownload } from "./lib/gallerydl.js";
 import { resolveBrowser } from "./lib/browsers.js";
-import { runSpotdlDownload } from "./lib/spotdl.js";
+import { runSpotdlDownload, SpotdlDownloadError } from "./lib/spotdl.js";
 import { runMonolithSave, webpageFilename } from "./lib/monolith.js";
 import {
   downloadPath,
@@ -169,10 +169,26 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
       toast.message = `${tracks} tracks`;
       toast.primaryAction = { title: "Open Folder", onAction: () => open(downloadPath) };
     } catch (error) {
-      toast.style = Toast.Style.Failure;
-      toast.title = "Download Failed";
-      toast.message = errorMessage(error);
-      toast.primaryAction = { title: "Copy Error", onAction: () => Clipboard.copy(errorMessage(error)) };
+      if (error instanceof SpotdlDownloadError) {
+        const partial = error.tracks > 0 ? `Downloaded ${error.tracks} track${error.tracks === 1 ? "" : "s"} before failure. ` : "";
+        toast.style = Toast.Style.Failure;
+        toast.title = error.summary.title;
+        toast.message = partial + error.summary.message;
+        toast.primaryAction = { title: "Copy Full Error", onAction: () => Clipboard.copy(error.rawOutput) };
+        if (error.summary.action === "open-preferences") {
+          toast.secondaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
+        } else if (error.summary.action === "open-setup-guide") {
+          toast.secondaryAction = {
+            title: "Open Setup Guide",
+            onAction: () => open("https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md"),
+          };
+        }
+      } else {
+        toast.style = Toast.Style.Failure;
+        toast.title = "Download Failed";
+        toast.message = errorMessage(error);
+        toast.primaryAction = { title: "Copy Error", onAction: () => Clipboard.copy(errorMessage(error)) };
+      }
     }
     return;
   }

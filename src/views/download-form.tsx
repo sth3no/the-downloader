@@ -22,7 +22,7 @@ import { composeVideoFormat } from "../lib/video-format.js";
 import { fetchVideoInfo, runThumbnailDownload, runVideoDownload } from "../lib/ytdlp.js";
 import { isLoginRequiredError, runGalleryDownload } from "../lib/gallerydl.js";
 import { resolveBrowser } from "../lib/browsers.js";
-import { runSpotdlDownload } from "../lib/spotdl.js";
+import { runSpotdlDownload, SpotdlDownloadError } from "../lib/spotdl.js";
 import { runMonolithSave, webpageFilename } from "../lib/monolith.js";
 import extractTranscript from "../transcript.js";
 import {
@@ -73,8 +73,23 @@ const FILETYPE_ICON: Record<Filetype, Icon> = {
   website: Icon.Globe,
 };
 
+const SPOTDL_SETUP_GUIDE_URL = "https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md";
+
 /** Turn a rejected runner into a red, copyable failure toast. */
 function failToast(toast: Toast, error: unknown) {
+  if (error instanceof SpotdlDownloadError) {
+    const partial = error.tracks > 0 ? `Downloaded ${error.tracks} track${error.tracks === 1 ? "" : "s"} before failure. ` : "";
+    toast.style = Toast.Style.Failure;
+    toast.title = error.summary.title;
+    toast.message = partial + error.summary.message;
+    toast.primaryAction = { title: "Copy Full Error", onAction: () => Clipboard.copy(error.rawOutput) };
+    if (error.summary.action === "open-preferences") {
+      toast.secondaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
+    } else if (error.summary.action === "open-setup-guide") {
+      toast.secondaryAction = { title: "Open Setup Guide", onAction: () => open(SPOTDL_SETUP_GUIDE_URL) };
+    }
+    return;
+  }
   const message = error instanceof Error ? error.message : "Unknown error";
   toast.style = Toast.Style.Failure;
   toast.title = "Download Failed";
