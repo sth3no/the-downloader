@@ -318,6 +318,21 @@ describe("summarizeSpotdlError", () => {
     expect(s.action).toBe("open-setup-guide");
   });
 
+  it("maps Python KeyError/AttributeError/TypeError tracebacks to a 'spotDL upstream bug' summary", () => {
+    for (const raw of [
+      "Processing query: https://open.spotify.com/album/abc\n\nAn error occurred\n+-- Traceback --+\n| in get_metadata:100\n+----+\nKeyError: 'label'",
+      "Traceback (most recent call last)\nAttributeError: 'NoneType' object has no attribute 'name'",
+      "TypeError: 'NoneType' object is not subscriptable",
+      "IndexError: list index out of range",
+    ]) {
+      const s = summarizeSpotdlError(raw);
+      expect(s.title.toLowerCase()).toMatch(/spotdl|upstream|bug/);
+      // The specific Python exception should appear in the user-facing message
+      // so the toast is actionable (not just "something broke").
+      expect(s.message).toMatch(/KeyError|AttributeError|TypeError|IndexError/);
+    }
+  });
+
   it("falls back to the last non-empty line for unknown errors", () => {
     const s = summarizeSpotdlError(
       "Some leading noise\n\n+----- traceback -----+\nFooError: something specific went wrong\n",

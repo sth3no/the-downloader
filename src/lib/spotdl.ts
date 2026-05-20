@@ -112,6 +112,13 @@ export function summarizeSpotdlError(rawOutput: string): SpotdlErrorSummary {
       action: "open-setup-guide",
     };
   }
+  const pythonException = rawOutput.match(/(KeyError|AttributeError|TypeError|IndexError|ValueError):\s*([^\n]+)/);
+  if (pythonException) {
+    return {
+      title: "spotDL upstream bug",
+      message: `spotDL crashed parsing the Spotify response (\`${pythonException[1]}: ${pythonException[2].trim().slice(0, 80)}\`). Try a different track/album/playlist, or check https://github.com/spotDL/spotify-downloader/issues for a known fix.`,
+    };
+  }
   const lastLine = rawOutput
     .split("\n")
     .map((l) => l.replace(/[|+\-\s]+$/g, "").trim())

@@ -79,6 +79,8 @@ Track and album downloads land directly in your configured download folder, name
 
 **"AudioProviderError" or YouTube-side errors** — the track isn't available on YouTube Music (region-locked, removed, etc.). spotDL can't work around this.
 
+**`spotDL upstream bug` toast (KeyError / AttributeError / TypeError in the traceback)** — Spotify changed its API response shape and the installed spotDL build hasn't caught up. Common signature: `KeyError: 'label'` on album downloads. Workarounds: try a different track/album, or check https://github.com/spotDL/spotify-downloader/issues for a fix in a newer release. To pick up a fix, delete `<Raycast extension data>/spotdl.exe` and re-run a Spotify download — the install screen reappears and grabs the latest from GitHub.
+
 **`HTTP Error for GET /v1/playlists/<id>/items returned 404`** (without user-auth): client-credentials auth can't see the playlist at all. Usually means the playlist isn't public. Enable **Spotify: User Authentication** in preferences and retry.
 
 **`HTTP Error for GET /v1/playlists/<id>/items returned 403`** (with user-auth): you authenticated successfully but Spotify refuses to expose *this specific playlist's* contents to *your* account. Three causes, in order of likelihood:
