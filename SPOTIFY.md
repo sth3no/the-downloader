@@ -33,11 +33,17 @@ After Save, you land on the app's **Basic Information** screen:
 3. Paste your Client Secret into **Spotify: Client Secret**.
 4. Close preferences. Done.
 
+> **Heads up — if the Download form was already open when you pasted the credentials**, close it and re-open the Download command (or trigger Fast Download fresh). Raycast reads preferences when a command first launches; a form that was open with empty creds keeps using empty creds until you re-launch it.
+
 ## What this enables
 
 - Track downloads (`open.spotify.com/track/…`)
 - Album downloads (`open.spotify.com/album/…`)
-- Playlist downloads (`open.spotify.com/playlist/…`) — public playlists only
+- Public playlist downloads (`open.spotify.com/playlist/…`)
+
+**Private playlists won't work** with Client ID/Secret alone — Spotify's client-credentials flow only sees public content. spotDL supports private playlists via `--user-auth` (browser OAuth on top of your Dev app), but that flag isn't currently exposed by the extension. Open an issue if you need it.
+
+If a public-looking playlist returns "0 tracks", check whether it's actually public — try opening it in a private/incognito browser tab while logged out. If you can't see it there, it's private to your account.
 
 Files land in your configured download folder, named `<Artists> - <Title>.<ext>`. The audio itself is sourced from YouTube Music via yt-dlp — that's how spotDL works under the hood; Spotify doesn't expose raw audio.
 
@@ -49,4 +55,6 @@ Files land in your configured download folder, named `<Artists> - <Title>.<ext>`
 
 **"AudioProviderError" or YouTube-side errors** — the track isn't available on YouTube Music (region-locked, removed, etc.). spotDL can't work around this.
 
-**Private playlists fail** — spotDL needs OAuth (`--user-auth`) for private playlists. Not currently exposed by the extension; open an issue if you need it.
+**Playlist downloads finish with "0 tracks"** — almost always means the playlist is private to your Spotify account. Client-credentials auth can't see private playlists. See the note above about `--user-auth`.
+
+**Credentials look right but downloads still fail "credentials missing"** — the Download form was open before you saved the preferences. Close it (`Esc` or back arrow) and re-open the Download command so it picks up the fresh values.

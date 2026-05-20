@@ -282,8 +282,11 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         message: "0 tracks",
       });
 
-      const clientId = prefs.spotifyClientId?.trim();
-      const clientSecret = prefs.spotifyClientSecret?.trim();
+      // Read credentials fresh on submit so prefs edited while the form is open
+      // are picked up without re-launching the command.
+      const livePrefs = getPreferenceValues<ExtensionPreferences>();
+      const clientId = livePrefs.spotifyClientId?.trim();
+      const clientSecret = livePrefs.spotifyClientSecret?.trim();
       if (!clientId || !clientSecret) {
         toast.style = Toast.Style.Failure;
         toast.title = "Spotify credentials missing";
