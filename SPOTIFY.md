@@ -52,15 +52,20 @@ To unlock private content, enable **Spotify: User Authentication** in extension 
 What happens on the next Spotify download:
 
 1. spotDL spawns, sees the OAuth flag, and starts a local HTTP server on `http://127.0.0.1:9900/`.
-2. Your default browser opens to a Spotify authorization page for *your* Dev app.
-3. Click **Agree**. Spotify redirects to `http://127.0.0.1:9900/?code=…` where spotDL's local helper catches the code.
-4. The access token is cached on disk. Every subsequent download is silent — no browser dance.
+2. Your default browser opens to a Spotify authorization page for *your* Dev app. You'll see:
+   - **Title:** _Allow Spotify to connect to: \<your app name\>_ (e.g. "raycast")
+   - **Your Spotify account name** (with profile picture) and a small "Not you?" link
+   - A list of permissions the app is requesting — view your account, your activity (saved songs, who you follow, your playlists and followed playlists)
+   - A green **Agree** button and a smaller **Cancel** link
+3. Click **Agree**. The browser navigates to `http://127.0.0.1:9900/?code=…` — you'll likely see a blank page or "This site can't be reached / connection refused" *after a second or two*. That's expected and harmless: spotDL's local server captured the code in the millisecond before closing.
+4. Back in Raycast, the download proceeds. The access token is cached to disk so every subsequent download skips the browser dance.
 
-Three gotchas:
+Four gotchas:
 
 - The Redirect URI on the Dev app **must include** `http://127.0.0.1:9900/` exactly (with the trailing slash, no path). If you registered something different earlier (e.g. `:8080/callback`), open your Dev app on developer.spotify.com → Settings → Redirect URIs, click **Add**, paste `http://127.0.0.1:9900/`, click **Add** (the purple button — chip needs to appear), then **Save**. Otherwise Spotify shows "redirect_uri: Not matching configuration" and refuses to authorize.
 - Port 9900 must be free when you authorize. If something else is bound to it (rare), the OAuth callback never reaches spotDL — the 2-minute watchdog will kill the wedged child and surface a clear error.
 - Public downloads work either way. Leave the checkbox off until you actually need private content.
+- spotDL's OAuth requests the scopes `playlist-read-private`, `user-library-read`, `user-follow-read` — **not** `playlist-read-collaborative`. Collaborative playlists, "unlisted" link-only playlists, and playlists owned by other users that are private-to-them all stay inaccessible even after authorizing. Symptom: `HTTP Error for GET /v1/playlists/<id>/items` after the green Agree button. If you suspect a playlist is in this bucket, open it in a private browser window while logged out — if Spotify still loads it via the URL but won't return it from `/playlists/<id>` in their API explorer, it's the unlisted case and you can't get it via the API.
 
 If a public-looking playlist returns "0 tracks", check whether it's actually public — open it in a private/incognito browser tab while logged out. If you can't see it there, it's private to your account.
 
@@ -74,7 +79,13 @@ Files land in your configured download folder, named `<Artists> - <Title>.<ext>`
 
 **"AudioProviderError" or YouTube-side errors** — the track isn't available on YouTube Music (region-locked, removed, etc.). spotDL can't work around this.
 
-**Playlist downloads finish with "0 tracks" or `HTTP Error … /playlists/…/items`** — almost always means the playlist is private to your Spotify account. Enable **Spotify: User Authentication** in preferences (see above) and retry — the first download triggers a one-time browser authorization on `http://127.0.0.1:9900/`.
+**Playlist downloads finish with "0 tracks" or `HTTP Error … /playlists/…/items`** — three possibilities:
+
+1. The playlist is private to your Spotify account → enable **Spotify: User Authentication** in preferences and retry (one-time browser authorization on `http://127.0.0.1:9900/`).
+2. The playlist is private to *someone else's* account, or it's an "unlisted" link-only playlist, or it's collaborative → no API access regardless of user-auth. The playlist viewer on open.spotify.com works because it uses Spotify's internal page-render API, but the documented Web API endpoint `/playlists/{id}/items` returns 404.
+3. The playlist ID in the URL is malformed → re-copy the share link from the Spotify app.
+
+To verify, try a known-public playlist like `https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M` (Today's Top Hits). If that downloads fine with credentials and your private playlist doesn't even with user-auth enabled, you're hitting case 2.
 
 **"redirect_uri: Not matching configuration" in the browser** — you enabled user-auth but `http://127.0.0.1:9900/` isn't on the Dev app's Redirect URIs list. Add it there (developer.spotify.com → your app → Settings → Redirect URIs → Add → Save) and try again.
 
