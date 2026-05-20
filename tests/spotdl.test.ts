@@ -45,7 +45,7 @@ describe("buildSpotdlArgs", () => {
     ).toContain("flac");
   });
 
-  it("appends --client-id and --client-secret when both are provided", () => {
+  it("appends --client-id, --client-secret and --use-official-api when both creds are provided", () => {
     const args = buildSpotdlArgs({
       url: "https://open.spotify.com/track/x",
       destination: "/d",
@@ -58,9 +58,12 @@ describe("buildSpotdlArgs", () => {
     expect(args).toContain("id123");
     expect(args).toContain("--client-secret");
     expect(args).toContain("secretXYZ");
+    // --use-official-api is what actually bypasses the broken librespot path;
+    // without it, the credentials alone are not enough.
+    expect(args).toContain("--use-official-api");
   });
 
-  it("omits --client-id and --client-secret when missing, empty, or whitespace", () => {
+  it("omits --client-id, --client-secret and --use-official-api when missing, empty, or whitespace", () => {
     const baseline = {
       url: "https://open.spotify.com/track/x",
       destination: "/d",
@@ -77,6 +80,7 @@ describe("buildSpotdlArgs", () => {
       const args = buildSpotdlArgs(variant);
       expect(args).not.toContain("--client-id");
       expect(args).not.toContain("--client-secret");
+      expect(args).not.toContain("--use-official-api");
     }
   });
 });

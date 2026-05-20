@@ -14,9 +14,11 @@ export type SpotdlDownloadOptions = {
 /**
  * Build spotDL CLI args. Files are written as `<artists> - <title>.<ext>` in
  * the destination. When both Spotify API credentials are provided, they are
- * appended so spotDL uses the user's developer app instead of the anonymous
- * librespot session — the latter regularly fails with "Could not get session
- * auth tokens" against Spotify's metadata endpoints.
+ * appended together with `--use-official-api` so spotDL talks only to the
+ * Spotify Web API. Without that flag spotDL still falls into librespot for
+ * track-hash checks (`_get_auth_vars` → "Could not get session auth tokens"),
+ * which depends on a third-party host (`code.thetadev.de`) for current secrets
+ * and outdated bundled fallbacks — both broken in practice.
  */
 export function buildSpotdlArgs(o: SpotdlDownloadOptions): string[] {
   const args = [
@@ -32,7 +34,7 @@ export function buildSpotdlArgs(o: SpotdlDownloadOptions): string[] {
   const id = o.clientId?.trim();
   const secret = o.clientSecret?.trim();
   if (id && secret) {
-    args.push("--client-id", id, "--client-secret", secret);
+    args.push("--client-id", id, "--client-secret", secret, "--use-official-api");
   }
   return args;
 }
