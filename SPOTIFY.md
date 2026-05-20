@@ -14,7 +14,7 @@ spotDL needs Spotify API credentials to look up track metadata (title, artist, a
    - **App name** — anything, e.g. `Raycast Downloader`.
    - **App description** — anything, e.g. `Personal use`.
    - **Website** — leave blank.
-   - **Redirect URIs** — type `http://127.0.0.1:8080/callback`, **then click the purple `Add` button on the right.** This is the easy-to-miss step — the URI needs to show up as a chip below the field; just typing it isn't enough. Any URL works (spotDL never opens it), but Spotify is strict: `http://localhost/...` is rejected, `http://127.0.0.1:<port>/...` works.
+   - **Redirect URIs** — type `http://127.0.0.1:9900/`, **then click the purple `Add` button on the right.** This is the easy-to-miss step — the URI needs to show up as a chip below the field; just typing it isn't enough. Spotify is strict about this format: `http://localhost/...` is rejected, `http://127.0.0.1:<port>/...` works. The `9900/` value is what spotDL uses during user-auth; matching it now lets you flip on private-playlist support later without revisiting the Dev app.
    - **Which API/SDKs are you planning to use?** — tick **Web API**.
 4. Tick **I understand and agree with Spotify's Developer Terms of Service and Design Guidelines** and click **Save**.
 
@@ -41,9 +41,28 @@ After Save, you land on the app's **Basic Information** screen:
 - Album downloads (`open.spotify.com/album/…`)
 - Public playlist downloads (`open.spotify.com/playlist/…`)
 
-**Private playlists and your saved library are not supported yet.** They require Spotify's user-authentication OAuth flow, which doesn't fit cleanly into Raycast's command lifecycle on Windows (the spotDL helper blocks on a browser callback that doesn't always reach back). If you need them, drop a comment on the repo — proper Raycast-native OAuth is on the roadmap.
+**Private playlists and your saved library** need one more step — see below.
 
-If a public-looking playlist returns "0 tracks" or `HTTP Error … /playlists/…/items`, check whether it's actually public — open it in a private/incognito browser tab while logged out. If you can't see it there, it's private to your account.
+## Private playlists & your library (optional)
+
+The Client ID/Secret above use Spotify's *client-credentials* flow, which can only see **public** content. Trying to download a private playlist returns "0 tracks" or an `HTTP Error … /playlists/…/items` toast.
+
+To unlock private content, enable **Spotify: User Authentication** in extension preferences (the checkbox right under Client Secret).
+
+What happens on the next Spotify download:
+
+1. spotDL spawns, sees the OAuth flag, and starts a local HTTP server on `http://127.0.0.1:9900/`.
+2. Your default browser opens to a Spotify authorization page for *your* Dev app.
+3. Click **Agree**. Spotify redirects to `http://127.0.0.1:9900/?code=…` where spotDL's local helper catches the code.
+4. The access token is cached on disk. Every subsequent download is silent — no browser dance.
+
+Three gotchas:
+
+- The Redirect URI on the Dev app **must include** `http://127.0.0.1:9900/` exactly (with the trailing slash, no path). If you registered something different earlier (e.g. `:8080/callback`), open your Dev app on developer.spotify.com → Settings → Redirect URIs, click **Add**, paste `http://127.0.0.1:9900/`, click **Add** (the purple button — chip needs to appear), then **Save**. Otherwise Spotify shows "redirect_uri: Not matching configuration" and refuses to authorize.
+- Port 9900 must be free when you authorize. If something else is bound to it (rare), the OAuth callback never reaches spotDL — the 2-minute watchdog will kill the wedged child and surface a clear error.
+- Public downloads work either way. Leave the checkbox off until you actually need private content.
+
+If a public-looking playlist returns "0 tracks", check whether it's actually public — open it in a private/incognito browser tab while logged out. If you can't see it there, it's private to your account.
 
 Files land in your configured download folder, named `<Artists> - <Title>.<ext>`. The audio itself is sourced from YouTube Music via yt-dlp — that's how spotDL works under the hood; Spotify doesn't expose raw audio.
 
@@ -55,7 +74,9 @@ Files land in your configured download folder, named `<Artists> - <Title>.<ext>`
 
 **"AudioProviderError" or YouTube-side errors** — the track isn't available on YouTube Music (region-locked, removed, etc.). spotDL can't work around this.
 
-**Playlist downloads finish with "0 tracks" or `HTTP Error … /playlists/…/items`** — almost always means the playlist is private to your Spotify account. Not supported yet (see "What this enables" above).
+**Playlist downloads finish with "0 tracks" or `HTTP Error … /playlists/…/items`** — almost always means the playlist is private to your Spotify account. Enable **Spotify: User Authentication** in preferences (see above) and retry — the first download triggers a one-time browser authorization on `http://127.0.0.1:9900/`.
+
+**"redirect_uri: Not matching configuration" in the browser** — you enabled user-auth but `http://127.0.0.1:9900/` isn't on the Dev app's Redirect URIs list. Add it there (developer.spotify.com → your app → Settings → Redirect URIs → Add → Save) and try again.
 
 **Download hangs forever ("Downloading from Spotify… 0 tracks" indefinitely)** — shouldn't happen as of the watchdog, but if it does the extension auto-kills the process after 2 minutes of silence and shows a clear failure. If you keep seeing it, share the toast text on the repo.
 

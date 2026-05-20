@@ -64,6 +64,47 @@ describe("buildSpotdlArgs", () => {
     expect(args).toContain("--use-official-api");
   });
 
+  it("appends --user-auth when userAuth is true and credentials are provided", () => {
+    const args = buildSpotdlArgs({
+      url: "https://open.spotify.com/playlist/x",
+      destination: "/d",
+      format: "mp3",
+      ffmpegPath: "/ff",
+      clientId: "id",
+      clientSecret: "secret",
+      userAuth: true,
+    });
+    expect(args).toContain("--user-auth");
+  });
+
+  it("omits --user-auth when userAuth is true but credentials are missing", () => {
+    // --user-auth alone is useless without a Dev app to authenticate against,
+    // so the flag should not leak through when credentials aren't set.
+    const args = buildSpotdlArgs({
+      url: "https://open.spotify.com/playlist/x",
+      destination: "/d",
+      format: "mp3",
+      ffmpegPath: "/ff",
+      userAuth: true,
+    });
+    expect(args).not.toContain("--user-auth");
+  });
+
+  it("omits --user-auth when userAuth is false or undefined, even with credentials", () => {
+    for (const userAuth of [false, undefined]) {
+      const args = buildSpotdlArgs({
+        url: "https://open.spotify.com/track/x",
+        destination: "/d",
+        format: "mp3",
+        ffmpegPath: "/ff",
+        clientId: "id",
+        clientSecret: "secret",
+        userAuth,
+      });
+      expect(args).not.toContain("--user-auth");
+    }
+  });
+
   it("omits --client-id, --client-secret and --use-official-api when missing, empty, or whitespace", () => {
     const baseline = {
       url: "https://open.spotify.com/track/x",

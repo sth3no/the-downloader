@@ -71,6 +71,7 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
     spotifyAudioFormat,
     spotifyClientId,
     spotifyClientSecret,
+    spotifyUserAuth,
     webpageSaveMode,
   } = getPreferenceValues<ExtensionPreferences>();
   const type = detectSource(url);
@@ -157,6 +158,7 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
           ffmpegPath,
           clientId,
           clientSecret,
+          userAuth: spotifyUserAuth,
         },
         (p) => {
           toast.message = `${p.tracks} tracks`;
