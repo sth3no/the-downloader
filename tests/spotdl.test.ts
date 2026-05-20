@@ -10,6 +10,7 @@ function fakeChild() {
   const child = new EventEmitter() as any;
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
+  child.kill = vi.fn();
   return child;
 }
 
@@ -61,47 +62,6 @@ describe("buildSpotdlArgs", () => {
     // --use-official-api is what actually bypasses the broken librespot path;
     // without it, the credentials alone are not enough.
     expect(args).toContain("--use-official-api");
-  });
-
-  it("appends --user-auth when userAuth is true and credentials are provided", () => {
-    const args = buildSpotdlArgs({
-      url: "https://open.spotify.com/playlist/x",
-      destination: "/d",
-      format: "mp3",
-      ffmpegPath: "/ff",
-      clientId: "id",
-      clientSecret: "secret",
-      userAuth: true,
-    });
-    expect(args).toContain("--user-auth");
-  });
-
-  it("omits --user-auth when userAuth is true but credentials are missing", () => {
-    // --user-auth alone is useless without a Dev app to authenticate against,
-    // so the flag should not leak through when credentials aren't set.
-    const args = buildSpotdlArgs({
-      url: "https://open.spotify.com/playlist/x",
-      destination: "/d",
-      format: "mp3",
-      ffmpegPath: "/ff",
-      userAuth: true,
-    });
-    expect(args).not.toContain("--user-auth");
-  });
-
-  it("omits --user-auth when userAuth is false or undefined, even with credentials", () => {
-    for (const userAuth of [false, undefined]) {
-      const args = buildSpotdlArgs({
-        url: "https://open.spotify.com/track/x",
-        destination: "/d",
-        format: "mp3",
-        ffmpegPath: "/ff",
-        clientId: "id",
-        clientSecret: "secret",
-        userAuth,
-      });
-      expect(args).not.toContain("--user-auth");
-    }
   });
 
   it("omits --client-id, --client-secret and --use-official-api when missing, empty, or whitespace", () => {
@@ -159,6 +119,36 @@ describe("runSpotdlDownload", () => {
     child.emit("close", 1);
 
     await expect(promise).rejects.toThrow("AudioProviderError");
+  });
+
+  it("rejects with a watchdog error when spotdl produces no output for the idle window", async () => {
+    // Mirrors the silent --user-auth hang we saw on Windows: spotdl prints
+    // "Processing query: ..." and then blocks forever waiting on an OAuth
+    // callback that never arrives. Without a watchdog the extension toast
+    // stays animated indefinitely and child processes pile up as zombies.
+    vi.useFakeTimers();
+    try {
+      const child = fakeChild();
+      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+      const promise = runSpotdlDownload(
+        "/support/spotdl",
+        { url: "https://open.spotify.com/track/x", destination: "/tmp", format: "mp3", ffmpegPath: "/ff" },
+        vi.fn(),
+      );
+      // Attach the assertion before advancing time so the rejection always has
+      // a handler — fake-timer ordering otherwise produces a spurious
+      // unhandled-rejection warning.
+      const assertion = expect(promise).rejects.toThrow(/stuck|no output|2 minutes/i);
+
+      child.stdout.emit("data", Buffer.from("Processing query: ...\n"));
+      await vi.advanceTimersByTimeAsync(125_000);
+
+      await assertion;
+      expect(child.kill).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("falls back to stdout when stderr is empty on a non-zero exit", async () => {

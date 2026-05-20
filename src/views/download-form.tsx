@@ -287,7 +287,6 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       const livePrefs = getPreferenceValues<ExtensionPreferences>();
       const clientId = livePrefs.spotifyClientId?.trim();
       const clientSecret = livePrefs.spotifyClientSecret?.trim();
-      const userAuth = livePrefs.spotifyUserAuth;
       if (!clientId || !clientSecret) {
         toast.style = Toast.Style.Failure;
         toast.title = "Spotify credentials missing";
@@ -311,7 +310,6 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             ffmpegPath: getffmpegPath(),
             clientId,
             clientSecret,
-            userAuth,
           },
           (p) => {
             toast.message = `${p.tracks} tracks`;

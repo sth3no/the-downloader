@@ -9,12 +9,6 @@ export type SpotdlDownloadOptions = {
   /** Spotify API credentials. Both must be present and non-empty for either to be passed. */
   clientId?: string;
   clientSecret?: string;
-  /**
-   * When true (and credentials are present), append `--user-auth` so spotDL runs
-   * the OAuth Authorization Code flow on first use — required to read private
-   * playlists or library content. Without it, only public content is reachable.
-   */
-  userAuth?: boolean;
 };
 
 /**
@@ -41,9 +35,6 @@ export function buildSpotdlArgs(o: SpotdlDownloadOptions): string[] {
   const secret = o.clientSecret?.trim();
   if (id && secret) {
     args.push("--client-id", id, "--client-secret", secret, "--use-official-api");
-    if (o.userAuth) {
-      args.push("--user-auth");
-    }
   }
   return args;
 }
@@ -51,10 +42,20 @@ export function buildSpotdlArgs(o: SpotdlDownloadOptions): string[] {
 export type SpotdlProgress = { tracks: number };
 
 /**
+ * Kill spotdl after this long with no stdout/stderr output. Real downloads emit
+ * progress lines well within this window even on slow networks. A silent gap
+ * past it means spotdl is wedged (e.g. waiting on an OAuth callback that won't
+ * arrive under Raycast) — better to surface a clear error than leave zombies.
+ */
+const SPOTDL_IDLE_TIMEOUT_MS = 120_000;
+
+/**
  * Run spotDL; onProgress fires as tracks complete. Resolves with the track count
  * or rejects with the failure output. spotDL is Python+Rich-based and routinely
  * prints tracebacks/errors to stdout rather than stderr, so stdout is captured
- * and used as the error message when stderr is empty.
+ * and used as the error message when stderr is empty. stdin is closed so spotdl
+ * can never fall back to interactive prompts (which would hang forever), and a
+ * watchdog kills the child if no output arrives within the idle window.
  */
 export function runSpotdlDownload(
   binaryPath: string,
@@ -62,11 +63,44 @@ export function runSpotdlDownload(
   onProgress: (p: SpotdlProgress) => void,
 ): Promise<SpotdlProgress> {
   return new Promise((resolve, reject) => {
-    const child = spawn(binaryPath, buildSpotdlArgs(options));
+    const child = spawn(binaryPath, buildSpotdlArgs(options), {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let tracks = 0;
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      if (idleTimer) clearTimeout(idleTimer);
+      fn();
+    };
+
+    const resetIdle = () => {
+      if (settled) return;
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        settle(() => {
+          try {
+            child.kill();
+          } catch {
+            /* child may already be dead */
+          }
+          reject(
+            new Error(
+              `spotdl produced no output for 2 minutes and was killed. This usually means it is stuck on an auth or network step; check SPOTIFY.md or retry.`,
+            ),
+          );
+        });
+      }, SPOTDL_IDLE_TIMEOUT_MS);
+    };
+    resetIdle();
+
     child.stdout.on("data", (data: Buffer) => {
+      resetIdle();
       const text = data.toString();
       stdout += text;
       // spotDL prints one "Downloaded ..." line per completed track.
@@ -76,11 +110,16 @@ export function runSpotdlDownload(
         onProgress({ tracks });
       }
     });
-    child.stderr.on("data", (data: Buffer) => (stderr += data.toString()));
-    child.on("error", reject);
+    child.stderr.on("data", (data: Buffer) => {
+      resetIdle();
+      stderr += data.toString();
+    });
+    child.on("error", (err) => settle(() => reject(err)));
     child.on("close", (code) => {
-      if (code === 0) resolve({ tracks });
-      else reject(new Error(stderr.trim() || stdout.trim() || `spotdl exited with code ${code}`));
+      settle(() => {
+        if (code === 0) resolve({ tracks });
+        else reject(new Error(stderr.trim() || stdout.trim() || `spotdl exited with code ${code}`));
+      });
     });
   });
 }
