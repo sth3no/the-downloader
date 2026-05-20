@@ -9,6 +9,12 @@ export type SpotdlDownloadOptions = {
   /** Spotify API credentials. Both must be present and non-empty for either to be passed. */
   clientId?: string;
   clientSecret?: string;
+  /**
+   * When true (and credentials are present), append `--user-auth` so spotDL runs
+   * the OAuth Authorization Code flow on first use — required to read private
+   * playlists or library content. Without it, only public content is reachable.
+   */
+  userAuth?: boolean;
 };
 
 /**
@@ -35,6 +41,9 @@ export function buildSpotdlArgs(o: SpotdlDownloadOptions): string[] {
   const secret = o.clientSecret?.trim();
   if (id && secret) {
     args.push("--client-id", id, "--client-secret", secret, "--use-official-api");
+    if (o.userAuth) {
+      args.push("--user-auth");
+    }
   }
   return args;
 }

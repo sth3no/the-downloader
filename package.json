@@ -227,6 +227,15 @@
       "required": false
     },
     {
+      "name": "spotifyUserAuth",
+      "title": "Spotify: User Authentication",
+      "description": "Enable browser-based OAuth so spotDL can read private playlists and your library. On the next Spotify download, your browser opens once to authorize the Dev app; the access token is cached after that. Requires Client ID + Client Secret. Public tracks/albums/playlists work without this.",
+      "type": "checkbox",
+      "label": "Use browser OAuth for private content",
+      "default": false,
+      "required": false
+    },
+    {
       "name": "homebrewPath",
       "title": "Homebrew Path",
       "description": "Path to the Homebrew executable. You can enter `which brew` to terminal to find its path.",
