@@ -41,12 +41,39 @@ winget install --id=${wingetId} -e
 \`\`\`
 `;
 
-const managedInstallGuide = (executable: string) => `
+const managedInstallGuide = (executable: string) =>
+  executable === "spotdl" ? spotdlInstallGuide : genericManagedInstallGuide(executable);
+
+const genericManagedInstallGuide = (executable: string) => `
 # 🚨 Error: \`${executable}\` is not installed
 
 This extension can download \`${executable}\` for you — a one-time, self-contained binary (~40 MB). No Homebrew or Python required.
 
 Press **⏎** to download it now. **Please do not close Raycast while the download is in progress.**
+`;
+
+const spotdlInstallGuide = `
+# 🚨 spotDL is not installed
+
+This extension can download spotDL for you — a one-time, self-contained binary (~40 MB). No Python required.
+
+Press **⏎** to install. **Please do not close Raycast while the download is in progress.**
+
+---
+
+## After install: connect your Spotify account
+
+spotDL needs Spotify API credentials to look up track metadata. Without them, downloads fail with _"Could not get session auth tokens"_ — Spotify's anonymous flow is unreliable. The one-time setup takes about a minute:
+
+1. Go to https://developer.spotify.com/dashboard and log in with any Spotify account.
+2. Click **Create app**. Use any name and description. For **Redirect URI**, enter \`http://127.0.0.1:8080/callback\` (any value works — spotDL never opens it). Tick **Web API**. Save.
+3. Open your new app, then **Settings**. Copy the **Client ID**. Click **View client secret** and copy the **Client Secret**.
+4. Open this extension's preferences (⌘,) and paste them into **Spotify: Client ID** and **Spotify: Client Secret**.
+5. Come back here and try the download again.
+
+Once entered, your credentials persist — you only do this once.
+
+See [SPOTIFY.md](https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md) for a screenshot walkthrough.
 `;
 
 export default function Installer({ executable, onRefresh }: { executable: string; onRefresh: () => void }) {

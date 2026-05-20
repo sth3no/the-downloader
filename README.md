@@ -33,3 +33,7 @@ See [SUPPORTED_SITES.md](SUPPORTED_SITES.md).
 ## Login-gated galleries
 
 To download from sites that require a login, point the extension at a browser you're already signed into. See [BROWSER_COOKIES.md](BROWSER_COOKIES.md).
+
+## Spotify downloads
+
+Spotify links need a one-time Developer app setup so spotDL can fetch track metadata. See [SPOTIFY.md](SPOTIFY.md).

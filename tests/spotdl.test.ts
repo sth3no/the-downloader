@@ -44,6 +44,41 @@ describe("buildSpotdlArgs", () => {
       }),
     ).toContain("flac");
   });
+
+  it("appends --client-id and --client-secret when both are provided", () => {
+    const args = buildSpotdlArgs({
+      url: "https://open.spotify.com/track/x",
+      destination: "/d",
+      format: "mp3",
+      ffmpegPath: "/ff",
+      clientId: "id123",
+      clientSecret: "secretXYZ",
+    });
+    expect(args).toContain("--client-id");
+    expect(args).toContain("id123");
+    expect(args).toContain("--client-secret");
+    expect(args).toContain("secretXYZ");
+  });
+
+  it("omits --client-id and --client-secret when missing, empty, or whitespace", () => {
+    const baseline = {
+      url: "https://open.spotify.com/track/x",
+      destination: "/d",
+      format: "mp3",
+      ffmpegPath: "/ff",
+    };
+    for (const variant of [
+      baseline,
+      { ...baseline, clientId: "", clientSecret: "" },
+      { ...baseline, clientId: "  ", clientSecret: "  " },
+      { ...baseline, clientId: "id-only", clientSecret: "" },
+      { ...baseline, clientId: "", clientSecret: "secret-only" },
+    ]) {
+      const args = buildSpotdlArgs(variant);
+      expect(args).not.toContain("--client-id");
+      expect(args).not.toContain("--client-secret");
+    }
+  });
 });
 
 describe("runSpotdlDownload", () => {

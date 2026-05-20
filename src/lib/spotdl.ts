@@ -6,11 +6,20 @@ export type SpotdlDownloadOptions = {
   destination: string;
   format: string;
   ffmpegPath: string;
+  /** Spotify API credentials. Both must be present and non-empty for either to be passed. */
+  clientId?: string;
+  clientSecret?: string;
 };
 
-/** Build spotDL CLI args. Files are written as `<artists> - <title>.<ext>` in the destination. */
+/**
+ * Build spotDL CLI args. Files are written as `<artists> - <title>.<ext>` in
+ * the destination. When both Spotify API credentials are provided, they are
+ * appended so spotDL uses the user's developer app instead of the anonymous
+ * librespot session — the latter regularly fails with "Could not get session
+ * auth tokens" against Spotify's metadata endpoints.
+ */
 export function buildSpotdlArgs(o: SpotdlDownloadOptions): string[] {
-  return [
+  const args = [
     "download",
     o.url,
     "--output",
@@ -20,6 +29,12 @@ export function buildSpotdlArgs(o: SpotdlDownloadOptions): string[] {
     "--ffmpeg",
     o.ffmpegPath,
   ];
+  const id = o.clientId?.trim();
+  const secret = o.clientSecret?.trim();
+  if (id && secret) {
+    args.push("--client-id", id, "--client-secret", secret);
+  }
+  return args;
 }
 
 export type SpotdlProgress = { tracks: number };

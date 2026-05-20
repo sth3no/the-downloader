@@ -211,6 +211,22 @@
       "required": false
     },
     {
+      "name": "spotifyClientId",
+      "title": "Spotify: Client ID",
+      "description": "Spotify Developer app Client ID. Required for reliable Spotify downloads — without it, spotDL's anonymous session frequently fails with 'Could not get session auth tokens'. See SPOTIFY.md for one-time setup.",
+      "type": "textfield",
+      "default": "",
+      "required": false
+    },
+    {
+      "name": "spotifyClientSecret",
+      "title": "Spotify: Client Secret",
+      "description": "Spotify Developer app Client Secret. Pairs with Client ID above. Stored as a password.",
+      "type": "password",
+      "default": "",
+      "required": false
+    },
+    {
       "name": "homebrewPath",
       "title": "Homebrew Path",
       "description": "Path to the Homebrew executable. You can enter `which brew` to terminal to find its path.",

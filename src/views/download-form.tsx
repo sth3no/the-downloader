@@ -284,7 +284,14 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       try {
         const { tracks } = await runSpotdlDownload(
           getSpotdlPath(),
-          { url: submitUrl, destination: folder, format: prefs.spotifyAudioFormat, ffmpegPath: getffmpegPath() },
+          {
+            url: submitUrl,
+            destination: folder,
+            format: prefs.spotifyAudioFormat,
+            ffmpegPath: getffmpegPath(),
+            clientId: prefs.spotifyClientId,
+            clientSecret: prefs.spotifyClientSecret,
+          },
           (p) => {
             toast.message = `${p.tracks} tracks`;
           },

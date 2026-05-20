@@ -65,8 +65,14 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
     return;
   }
 
-  const { cookiesFromBrowser, cookiesFromBrowserCustom, spotifyAudioFormat, webpageSaveMode } =
-    getPreferenceValues<ExtensionPreferences>();
+  const {
+    cookiesFromBrowser,
+    cookiesFromBrowserCustom,
+    spotifyAudioFormat,
+    spotifyClientId,
+    spotifyClientSecret,
+    webpageSaveMode,
+  } = getPreferenceValues<ExtensionPreferences>();
   const type = detectSource(url);
 
   if (type === "gallery") {
@@ -128,7 +134,14 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
     try {
       const { tracks } = await runSpotdlDownload(
         spotdlPath,
-        { url, destination: downloadPath, format: spotifyAudioFormat, ffmpegPath },
+        {
+          url,
+          destination: downloadPath,
+          format: spotifyAudioFormat,
+          ffmpegPath,
+          clientId: spotifyClientId,
+          clientSecret: spotifyClientSecret,
+        },
         (p) => {
           toast.message = `${p.tracks} tracks`;
         },
