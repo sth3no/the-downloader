@@ -79,13 +79,17 @@ Track and album downloads land directly in your configured download folder, name
 
 **"AudioProviderError" or YouTube-side errors** — the track isn't available on YouTube Music (region-locked, removed, etc.). spotDL can't work around this.
 
-**Playlist downloads finish with "0 tracks" or `HTTP Error … /playlists/…/items`** — three possibilities:
+**`HTTP Error for GET /v1/playlists/<id>/items returned 404`** (without user-auth): client-credentials auth can't see the playlist at all. Usually means the playlist isn't public. Enable **Spotify: User Authentication** in preferences and retry.
 
-1. The playlist is private to your Spotify account → enable **Spotify: User Authentication** in preferences and retry (one-time browser authorization on `http://127.0.0.1:9900/`).
-2. The playlist is private to *someone else's* account, or it's an "unlisted" link-only playlist, or it's collaborative → no API access regardless of user-auth. The playlist viewer on open.spotify.com works because it uses Spotify's internal page-render API, but the documented Web API endpoint `/playlists/{id}/items` returns 404.
-3. The playlist ID in the URL is malformed → re-copy the share link from the Spotify app.
+**`HTTP Error for GET /v1/playlists/<id>/items returned 403`** (with user-auth): you authenticated successfully but Spotify refuses to expose *this specific playlist's* contents to *your* account. Three causes, in order of likelihood:
 
-To verify, try a known-public playlist like `https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M` (Today's Top Hits). If that downloads fine with credentials and your private playlist doesn't even with user-auth enabled, you're hitting case 2.
+1. The playlist is private and owned by someone else — ask the owner to flip it to **Public** (Spotify app → playlist → ⋯ → Make Public). User-auth's `playlist-read-private` scope only covers playlists *you* own.
+2. It's a collaborative playlist where you aren't a contributor — spotDL doesn't request `playlist-read-collaborative`, so even adding you as collaborator wouldn't help today.
+3. It's a Spotify-curated mix or radio-style playlist (Daily Mix, Discover Weekly, Release Radar) — those have special access rules that aren't exposed via the public Web API.
+
+To verify the chain itself is healthy, try `https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M` (Today's Top Hits). If that downloads into its own `Today's Top Hits/` folder, your credentials and OAuth are fine and the 403 is purely about that one playlist's privacy.
+
+Note: spotDL often downloads a handful of tracks before the 403 surfaces — the metadata endpoint `/playlists/{id}` returns the first batch of track URIs inline, and spotDL grabs those before the paginated `/items` call fails. Partial results in your Downloads folder don't mean the chain is broken.
 
 **"redirect_uri: Not matching configuration" in the browser** — you enabled user-auth but `http://127.0.0.1:9900/` isn't on the Dev app's Redirect URIs list. Add it there (developer.spotify.com → your app → Settings → Redirect URIs → Add → Save) and try again.
 
