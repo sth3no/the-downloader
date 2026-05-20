@@ -52,16 +52,20 @@ This extension can download \`${executable}\` for you — a one-time, self-conta
 Press **⏎** to download it now. **Please do not close Raycast while the download is in progress.**
 `;
 
-const spotdlInstallGuide = `
-# 🚨 spotDL is not installed
+const SPOTDL_SETUP_GUIDE_URL = "https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md";
 
-This extension can download spotDL for you — a one-time, self-contained binary (~40 MB). No Python required.
+const spotdlInstallGuide = (installed: boolean) => `
+# ${installed ? "✅ spotDL installed" : "🚨 spotDL is not installed"}
 
-Press **⏎** to install. **Please do not close Raycast while the download is in progress.**
+${
+  installed
+    ? "Set up your Spotify credentials below (about one minute), then press **⏎** to continue."
+    : "This extension can download spotDL for you — a one-time, self-contained binary (~40 MB). No Python required.\n\nPress **⏎** to install. **Please do not close Raycast while the download is in progress.**"
+}
 
 ---
 
-## After install: connect your Spotify account
+## Connect your Spotify account
 
 spotDL needs Spotify API credentials to look up track metadata. Without them, downloads fail with _"Could not get session auth tokens"_ — Spotify's anonymous flow is unreliable. The one-time setup takes about a minute:
 
@@ -69,19 +73,27 @@ spotDL needs Spotify API credentials to look up track metadata. Without them, do
 2. Click **Create app**. Use any name and description. For **Redirect URI**, enter \`http://127.0.0.1:8080/callback\` (any value works — spotDL never opens it). Tick **Web API**. Save.
 3. Open your new app, then **Settings**. Copy the **Client ID**. Click **View client secret** and copy the **Client Secret**.
 4. Open this extension's preferences (⌘,) and paste them into **Spotify: Client ID** and **Spotify: Client Secret**.
-5. Come back here and try the download again.
+5. Come back here and ${installed ? "press **⏎** to continue" : "try the download again"}.
 
 Once entered, your credentials persist — you only do this once.
 
-See [SPOTIFY.md](https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md) for a screenshot walkthrough.
+Something not working? Open the [setup guide & troubleshooting](${SPOTDL_SETUP_GUIDE_URL}).
 `;
 
 export default function Installer({ executable, onRefresh }: { executable: string; onRefresh: () => void }) {
+  const [installed, setInstalled] = useState(false);
   if (isManagedTool(executable)) {
     return (
       <Detail
-        actions={<ManagedInstall executable={executable} onRefresh={onRefresh} />}
-        markdown={managedInstallGuide(executable)}
+        actions={
+          <ManagedInstall
+            executable={executable}
+            installed={installed}
+            onInstalled={() => setInstalled(true)}
+            onContinue={onRefresh}
+          />
+        }
+        markdown={executable === "spotdl" ? spotdlInstallGuide(installed) : genericManagedInstallGuide(executable)}
       />
     );
   }
@@ -93,8 +105,40 @@ export default function Installer({ executable, onRefresh }: { executable: strin
   );
 }
 
-function ManagedInstall({ executable, onRefresh }: { executable: string; onRefresh: () => void }) {
+function ManagedInstall({
+  executable,
+  installed,
+  onInstalled,
+  onContinue,
+}: {
+  executable: string;
+  installed: boolean;
+  onInstalled: () => void;
+  onContinue: () => void;
+}) {
   const [isLoading, setIsLoading] = useState(false);
+
+  const setupGuideAction = (
+    <Action
+      title="Open Setup Guide"
+      icon={Icon.QuestionMarkCircle}
+      onAction={() => open(SPOTDL_SETUP_GUIDE_URL)}
+    />
+  );
+
+  if (installed) {
+    return (
+      <ActionPanel>
+        <Action title="Continue" icon={Icon.ArrowRight} onAction={onContinue} />
+        <Action
+          title="Open Extension Preferences"
+          icon={Icon.Cog}
+          onAction={openExtensionPreferences}
+        />
+        {executable === "spotdl" && setupGuideAction}
+      </ActionPanel>
+    );
+  }
 
   return (
     <ActionPanel>
@@ -112,7 +156,13 @@ function ManagedInstall({ executable, onRefresh }: { executable: string; onRefre
             try {
               await downloadSpotdl(environment.supportPath);
               await installationToast.hide();
-              onRefresh();
+              setIsLoading(false);
+              if (executable === "spotdl") {
+                onInstalled();
+              } else {
+                onContinue();
+              }
+              return;
             } catch (error) {
               await installationToast.hide();
               console.error(error);
@@ -133,6 +183,7 @@ function ManagedInstall({ executable, onRefresh }: { executable: string; onRefre
           }}
         />
       )}
+      {!isLoading && executable === "spotdl" && setupGuideAction}
     </ActionPanel>
   );
 }

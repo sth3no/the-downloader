@@ -281,6 +281,22 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         title: "Downloading from Spotify",
         message: "0 tracks",
       });
+
+      const clientId = prefs.spotifyClientId?.trim();
+      const clientSecret = prefs.spotifyClientSecret?.trim();
+      if (!clientId || !clientSecret) {
+        toast.style = Toast.Style.Failure;
+        toast.title = "Spotify credentials missing";
+        toast.message =
+          "Open extension preferences and set Spotify: Client ID and Client Secret. The setup guide explains how to get them.";
+        toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
+        toast.secondaryAction = {
+          title: "Open Setup Guide",
+          onAction: () => open("https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md"),
+        };
+        return;
+      }
+
       try {
         const { tracks } = await runSpotdlDownload(
           getSpotdlPath(),
@@ -289,8 +305,8 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             destination: folder,
             format: prefs.spotifyAudioFormat,
             ffmpegPath: getffmpegPath(),
-            clientId: prefs.spotifyClientId,
-            clientSecret: prefs.spotifyClientSecret,
+            clientId,
+            clientSecret,
           },
           (p) => {
             toast.message = `${p.tracks} tracks`;
