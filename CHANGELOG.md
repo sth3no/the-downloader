@@ -6,6 +6,7 @@
 - Added a **Network: Idle Timeout** preference (seconds, default 120). All four runners read it through the same code path. Raise it on very slow networks; lower it to surface stalls faster.
 - **Transcript scratch directory** moved out of the user's download folder. It now lives under Raycast's support path with a per-call UUID subdirectory, so two concurrent transcript extractions can no longer step on each other (one's `rmSync` deleting the dir while the other reads from it), and a read-only or slow-mounted download folder no longer breaks transcript extraction.
 - **Concurrent-submit guard** on the Download form: a second submit while a download is already running now shows a clear "A download is already running" toast instead of firing a second runner that races the first for the same output filename.
+- **URL scheme allowlist**: `isValidUrl` now restricts to `http`/`https`. `javascript:`, `file:`, `data:`, and `ftp:` URLs are rejected up front, preventing the downstream tools from receiving inputs they were never meant to handle (yt-dlp's generic extractor on a `file:` URL, etc.). Protocol-less inputs like `youtube.com/watch?v=…` still work — they're prefixed with `https://` at the use site.
 
 ## [Fix: macOS Stability] - 2026-05-21
 

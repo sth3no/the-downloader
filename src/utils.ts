@@ -1,12 +1,12 @@
 import * as fs from "node:fs";
 import { getPreferenceValues, environment } from "@raycast/api";
 import { formatDuration, intervalToDuration } from "date-fns";
-import validator from "validator";
 import { Format, Video } from "./types.js";
 import { execSync } from "child_process";
 import { findHomebrewPath, resolveBinary, isWindows, isMac } from "./lib/binary.js";
+import { isValidUrl } from "./lib/url.js";
 
-export { isWindows, isMac };
+export { isWindows, isMac, isValidUrl };
 
 function sanitizeWindowsPath(path: string): string {
   return path.replace(/\r/g, "").replace(/\n/g, "").trim();
@@ -104,10 +104,6 @@ export function isValidHHMM(input: string) {
   } catch {
     return false;
   }
-}
-
-export function isValidUrl(url: string) {
-  return validator.isURL(url, { require_protocol: false });
 }
 
 export function formatTbr(tbr: number | null) {
