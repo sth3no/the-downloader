@@ -6,6 +6,8 @@ export type GalleryDownloadOptions = {
   cookiesFromBrowser?: string;
   /** Idle-watchdog window in ms. Defaults to DEFAULT_IDLE_MS if omitted. */
   idleMs?: number;
+  /** Aborting cancels the download mid-flight. */
+  abortSignal?: AbortSignal;
 };
 
 /** Build gallery-dl CLI args. `-d` is the base dir; gallery-dl creates per-site subfolders. */
@@ -47,6 +49,7 @@ export async function runGalleryDownload(
   const { code, stderr } = await runWithWatchdog(binaryPath, buildGalleryArgs(options), {
     idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
     onStdoutChunk: handleStdout,
+    abortSignal: options.abortSignal,
   });
   if (code === 0) return { files };
   throw new Error(stderr.trim() || `gallery-dl exited with code ${code}`);

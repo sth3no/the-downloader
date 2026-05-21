@@ -23,6 +23,7 @@ import { composeVideoFormat } from "../lib/video-format.js";
 import { fetchVideoInfo, runThumbnailDownload, runVideoDownload } from "../lib/ytdlp.js";
 import { isLoginRequiredError, runGalleryDownload } from "../lib/gallerydl.js";
 import { resolveBrowser } from "../lib/browsers.js";
+import { AbortError } from "../lib/run.js";
 import { runSpotdlDownload, SpotdlDownloadError } from "../lib/spotdl.js";
 import { runMonolithSave, webpageFilename } from "../lib/monolith.js";
 import extractTranscript from "../transcript.js";
@@ -77,8 +78,16 @@ const FILETYPE_ICON: Record<Filetype, Icon> = {
 
 const SPOTDL_SETUP_GUIDE_URL = "https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md";
 
-/** Turn a rejected runner into a red, copyable failure toast. */
+/** Turn a rejected runner into a red, copyable failure toast — or a neutral "Cancelled" toast when the user pressed Stop. */
 function failToast(toast: Toast, error: unknown) {
+  if (error instanceof AbortError) {
+    toast.style = Toast.Style.Failure;
+    toast.title = "Cancelled";
+    toast.message = undefined;
+    toast.primaryAction = undefined;
+    toast.secondaryAction = undefined;
+    return;
+  }
   if (error instanceof SpotdlDownloadError) {
     const partial =
       error.tracks > 0 ? `Downloaded ${error.tracks} track${error.tracks === 1 ? "" : "s"} before failure. ` : "";
@@ -115,6 +124,35 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
   // re-render would race with the click. Refs update inside the same event
   // loop turn that set them.
   const submitInFlight = useRef(false);
+  // Controller for the in-flight runner. Set on submit, used by the Stop
+  // toast action AND by the component-unmount cleanup so a dismissed form
+  // does not leave zombie yt-dlp / gallery-dl / monolith / spotdl children
+  // attached to the user's Raycast process.
+  const activeAbort = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      activeAbort.current?.abort();
+    };
+  }, []);
+
+  /**
+   * Wire an AbortController to a toast: returns the signal for the runner
+   * options and a `done()` to call on completion. The toast gains a "Stop"
+   * secondary action that aborts the in-flight child, and the controller is
+   * tracked so unmount cleanup can kill anything still running.
+   */
+  function startAbortable(toast: Toast): { signal: AbortSignal; done: () => void } {
+    const controller = new AbortController();
+    activeAbort.current = controller;
+    toast.secondaryAction = { title: "Stop", onAction: () => controller.abort() };
+    return {
+      signal: controller.signal,
+      done: () => {
+        if (activeAbort.current === controller) activeAbort.current = null;
+      },
+    };
+  }
 
   const validUrl = isValidUrl(url);
   const source = useMemo(() => detectSource(url), [url]);
@@ -223,12 +261,14 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
   ) {
     if (ft === "website") {
       const toast = await showToast({ style: Toast.Style.Animated, title: "Saving Webpage" });
+      const { signal, done } = startAbortable(toast);
       try {
         const { filePath } = await runMonolithSave(getMonolithPath(), {
           url: submitUrl,
           outputPath: path.join(folder, webpageFilename(submitUrl)),
           noJavaScript: values.saveMode === "lightweight",
           idleMs: getIdleTimeoutMs(),
+          abortSignal: signal,
         });
         toast.style = Toast.Style.Success;
         toast.title = "Webpage Saved";
@@ -237,6 +277,8 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         toast.secondaryAction = { title: "Open File", onAction: () => open(filePath) };
       } catch (error) {
         failToast(toast, error);
+      } finally {
+        done();
       }
       return;
     }
@@ -270,6 +312,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         return;
       }
 
+      const { signal, done } = startAbortable(toast);
       try {
         const { files } = await runGalleryDownload(
           getGalleryDlPath(),
@@ -278,6 +321,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             destination: folder,
             cookiesFromBrowser: browser.spec || undefined,
             idleMs: getIdleTimeoutMs(),
+            abortSignal: signal,
           },
           (p) => {
             toast.message = `${p.files} files`;
@@ -287,6 +331,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         toast.title = "Gallery Downloaded";
         toast.message = `${files} files`;
         toast.primaryAction = { title: "Open Folder", onAction: () => open(folder) };
+        toast.secondaryAction = undefined;
       } catch (error) {
         if (isLoginRequiredError(error)) {
           toast.style = Toast.Style.Failure;
@@ -295,20 +340,25 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             ? `Sign in to the site in ${browser.label}, or change the browser in preferences.`
             : "Set Gallery: Cookies from Browser in preferences to use your browser's session.";
           toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
+          toast.secondaryAction = undefined;
         } else {
           failToast(toast, error);
         }
+      } finally {
+        done();
       }
       return;
     }
 
     if (ft === "image") {
       const toast = await showToast({ style: Toast.Style.Animated, title: "Downloading Thumbnail" });
+      const { signal, done } = startAbortable(toast);
       try {
         const { filePath } = await runThumbnailDownload(getytdlPath(), {
           url: submitUrl,
           outputTemplate: path.join(folder, "%(title)s (%(id)s).%(ext)s"),
           idleMs: getIdleTimeoutMs(),
+          abortSignal: signal,
         });
         toast.style = Toast.Style.Success;
         toast.title = "Thumbnail Saved";
@@ -319,9 +369,13 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         };
         if (filePath) {
           toast.secondaryAction = { title: "Open File", onAction: () => open(filePath) };
+        } else {
+          toast.secondaryAction = undefined;
         }
       } catch (error) {
         failToast(toast, error);
+      } finally {
+        done();
       }
       return;
     }
@@ -352,6 +406,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         return;
       }
 
+      const { signal, done } = startAbortable(toast);
       try {
         const { tracks } = await runSpotdlDownload(
           getSpotdlPath(),
@@ -365,6 +420,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             userAuth,
             supportDir: environment.supportPath,
             idleMs: getIdleTimeoutMs(),
+            abortSignal: signal,
           },
           (p) => {
             toast.message = `${p.tracks} tracks`;
@@ -374,8 +430,11 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         toast.title = "Download Complete";
         toast.message = `${tracks} tracks`;
         toast.primaryAction = { title: "Open Folder", onAction: () => open(folder) };
+        toast.secondaryAction = undefined;
       } catch (error) {
         failToast(toast, error);
+      } finally {
+        done();
       }
       return;
     }
@@ -403,6 +462,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       title: ft === "audio" ? "Downloading Audio" : "Downloading Video",
       message: "0%",
     });
+    const { signal, done } = startAbortable(toast);
     try {
       const { filePath } = await runVideoDownload(
         getytdlPath(),
@@ -413,6 +473,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
           ffmpegPath: getffmpegPath(),
           denoPath: fs.existsSync(denoPath) ? denoPath : undefined,
           idleMs: getIdleTimeoutMs(),
+          abortSignal: signal,
         },
         (percent) => {
           toast.message = `${Math.floor(percent)}%`;
@@ -433,9 +494,13 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             showHUD("Copied to Clipboard");
           },
         };
+      } else {
+        toast.secondaryAction = undefined;
       }
     } catch (error) {
       failToast(toast, error);
+    } finally {
+      done();
     }
   }
 

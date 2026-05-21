@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
 import { spawn } from "node:child_process";
-import { DEFAULT_IDLE_MS, runWithWatchdog } from "../src/lib/run";
+import { AbortError, DEFAULT_IDLE_MS, runWithWatchdog } from "../src/lib/run";
 
 function fakeChild() {
   const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => void };
@@ -143,5 +143,42 @@ describe("runWithWatchdog", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("rejects immediately with AbortError when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      runWithWatchdog("/bin/x", [], { idleMs: 60_000, abortSignal: controller.signal }),
+    ).rejects.toBeInstanceOf(AbortError);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("kills the child and rejects with AbortError when the signal aborts mid-flight (user pressed Stop)", async () => {
+    const controller = new AbortController();
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const promise = runWithWatchdog("/bin/x", [], { idleMs: 60_000, abortSignal: controller.signal });
+    const assertion = expect(promise).rejects.toBeInstanceOf(AbortError);
+
+    child.stdout.emit("data", Buffer.from("running\n"));
+    controller.abort();
+
+    await assertion;
+    expect(child.kill).toHaveBeenCalled();
+  });
+
+  it("ignores a post-settle abort — the signal listener is removed so a stray abort can't trigger a double settle", async () => {
+    const controller = new AbortController();
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const promise = runWithWatchdog("/bin/x", [], { idleMs: 60_000, abortSignal: controller.signal });
+    child.emit("close", 0);
+    await promise;
+
+    // Aborting after the child has cleanly closed must not crash or re-settle the promise.
+    expect(() => controller.abort()).not.toThrow();
   });
 });

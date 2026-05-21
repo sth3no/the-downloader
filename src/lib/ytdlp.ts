@@ -52,6 +52,8 @@ export type VideoDownloadArgs = {
   denoPath?: string;
   /** Idle-watchdog window in ms. Defaults to DEFAULT_IDLE_MS if omitted. */
   idleMs?: number;
+  /** Aborting cancels the download mid-flight (used by the form's Stop action and unmount cleanup). */
+  abortSignal?: AbortSignal;
 };
 
 /**
@@ -115,6 +117,7 @@ export async function runVideoDownload(
     idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
     env: { ...process.env, PYTHONUNBUFFERED: "1" },
     onStdoutChunk: handleStdout,
+    abortSignal: options.abortSignal,
   });
   if (code === 0) return { filePath };
   throw new Error(stderr.trim() || `yt-dlp exited with code ${code}`);
@@ -125,6 +128,8 @@ export type ThumbnailDownloadArgs = {
   outputTemplate: string;
   /** Idle-watchdog window in ms. Defaults to DEFAULT_IDLE_MS if omitted. */
   idleMs?: number;
+  /** Aborting cancels the download mid-flight. */
+  abortSignal?: AbortSignal;
 };
 
 /** Build yt-dlp CLI args to fetch only a URL's thumbnail image; the video itself is skipped. */
@@ -155,6 +160,7 @@ export async function runThumbnailDownload(
     idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
     env: { ...process.env, PYTHONUNBUFFERED: "1" },
     onStdoutChunk: handleStdout,
+    abortSignal: options.abortSignal,
   });
   if (code === 0) return { filePath };
   throw new Error(stderr.trim() || `yt-dlp exited with code ${code}`);

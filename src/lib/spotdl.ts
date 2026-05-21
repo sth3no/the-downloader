@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { DEFAULT_IDLE_MS } from "./run.js";
+import { AbortError, DEFAULT_IDLE_MS } from "./run.js";
 import { invalidateSpotipyCacheIfStale } from "./spotdl-cache.js";
 
 export type SpotdlDownloadOptions = {
@@ -28,6 +28,8 @@ export type SpotdlDownloadOptions = {
   supportDir?: string;
   /** Idle-watchdog window in ms. Defaults to DEFAULT_IDLE_MS if omitted. */
   idleMs?: number;
+  /** Aborting cancels the download mid-flight. */
+  abortSignal?: AbortSignal;
 };
 
 /** Matches both `https://open.spotify.com[/<locale>]/playlist/...` URLs and `spotify:playlist:...` URIs. */
@@ -195,6 +197,10 @@ export function runSpotdlDownload(
     );
   }
   return new Promise((resolve, reject) => {
+    if (options.abortSignal?.aborted) {
+      reject(new AbortError());
+      return;
+    }
     const child = spawn(binaryPath, buildSpotdlArgs(options), {
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -208,8 +214,21 @@ export function runSpotdlDownload(
       if (settled) return;
       settled = true;
       if (idleTimer) clearTimeout(idleTimer);
+      options.abortSignal?.removeEventListener("abort", onAbort);
       fn();
     };
+
+    const onAbort = () => {
+      settle(() => {
+        try {
+          child.kill();
+        } catch {
+          /* child may already be dead */
+        }
+        reject(new AbortError());
+      });
+    };
+    options.abortSignal?.addEventListener("abort", onAbort, { once: true });
 
     const idleMs = options.idleMs ?? DEFAULT_IDLE_MS;
     const resetIdle = () => {

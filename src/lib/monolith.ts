@@ -8,6 +8,8 @@ export type MonolithSaveOptions = {
   noJavaScript: boolean;
   /** Idle-watchdog window in ms. Defaults to DEFAULT_IDLE_MS if omitted. */
   idleMs?: number;
+  /** Aborting cancels the save mid-flight. */
+  abortSignal?: AbortSignal;
 };
 
 /** Build monolith CLI args. monolith writes the self-contained HTML to `outputPath`. */
@@ -54,6 +56,7 @@ export type MonolithResult = { filePath: string };
 export async function runMonolithSave(binaryPath: string, options: MonolithSaveOptions): Promise<MonolithResult> {
   const { code, stderr } = await runWithWatchdog(binaryPath, buildMonolithArgs(options), {
     idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
+    abortSignal: options.abortSignal,
   });
   if (code === 0) return { filePath: options.outputPath };
   throw new Error(stderr.trim() || `monolith exited with code ${code}`);
