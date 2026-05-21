@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -111,6 +111,10 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
   );
   const [filetypeTouched, setFiletypeTouched] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  // Ref (not state) so a rapid second submit sees the flag synchronously — a
+  // re-render would race with the click. Refs update inside the same event
+  // loop turn that set them.
+  const submitInFlight = useRef(false);
 
   const validUrl = isValidUrl(url);
   const source = useMemo(() => detectSource(url), [url]);
@@ -181,6 +185,13 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         : undefined;
 
   async function handleSubmit(values: Form.Values) {
+    // Reject re-entrant submits while a download is in flight — a double-press
+    // of ⌘⏎ would otherwise fire two downloads to the same output template,
+    // racing for the same file and corrupting both.
+    if (submitInFlight.current) {
+      await showToast({ style: Toast.Style.Failure, title: "A download is already running" });
+      return;
+    }
     const submitUrl = String(values.url ?? "").trim();
     if (!isValidUrl(submitUrl)) {
       await showToast({ style: Toast.Style.Failure, title: "Enter a valid URL" });
@@ -195,6 +206,21 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       return;
     }
 
+    submitInFlight.current = true;
+    try {
+      await runSubmit(submitUrl, ft, src, folder, values);
+    } finally {
+      submitInFlight.current = false;
+    }
+  }
+
+  async function runSubmit(
+    submitUrl: string,
+    ft: Filetype,
+    src: ReturnType<typeof detectSource>,
+    folder: string,
+    values: Form.Values,
+  ) {
     if (ft === "website") {
       const toast = await showToast({ style: Toast.Style.Animated, title: "Saving Webpage" });
       try {

@@ -5,6 +5,7 @@
 - yt-dlp, gallery-dl, and monolith now run with the same hang-prevention spotDL already had: stdin is closed (so the child cannot block on an interactive 2FA / cookie-passphrase / login prompt) and an idle watchdog kills the child when no output arrives for a configurable window. Extracted the pattern into a shared `runWithWatchdog` helper in `src/lib/run.ts`.
 - Added a **Network: Idle Timeout** preference (seconds, default 120). All four runners read it through the same code path. Raise it on very slow networks; lower it to surface stalls faster.
 - **Transcript scratch directory** moved out of the user's download folder. It now lives under Raycast's support path with a per-call UUID subdirectory, so two concurrent transcript extractions can no longer step on each other (one's `rmSync` deleting the dir while the other reads from it), and a read-only or slow-mounted download folder no longer breaks transcript extraction.
+- **Concurrent-submit guard** on the Download form: a second submit while a download is already running now shows a clear "A download is already running" toast instead of firing a second runner that races the first for the same output filename.
 
 ## [Fix: macOS Stability] - 2026-05-21
 
