@@ -1,5 +1,10 @@
 # Video Downloader Changelog
 
+## [Fix: Hang Prevention] - 2026-05-21
+
+- yt-dlp, gallery-dl, and monolith now run with the same hang-prevention spotDL already had: stdin is closed (so the child cannot block on an interactive 2FA / cookie-passphrase / login prompt) and an idle watchdog kills the child when no output arrives for a configurable window. Extracted the pattern into a shared `runWithWatchdog` helper in `src/lib/run.ts`.
+- Added a **Network: Idle Timeout** preference (seconds, default 120). All four runners read it through the same code path. Raise it on very slow networks; lower it to surface stalls faster.
+
 ## [Fix: macOS Stability] - 2026-05-21
 
 - **Binary resolution** now searches a list of well-known macOS install locations — Apple Silicon Homebrew, Intel Homebrew, MacPorts, pipx user (`~/.local/bin`), Cargo (`~/.cargo/bin`), pyenv shims, and the inherited `PATH` — instead of assuming `/opt/homebrew/bin`. Intel Macs and pipx/Cargo installs of yt-dlp, gallery-dl, spotDL, and monolith are detected without the user setting per-tool path preferences.

@@ -19,6 +19,7 @@ export const {
   autoLoadUrlFromSelectedText,
   enableBrowserExtensionSupport,
   forceIpv4,
+  networkIdleTimeoutSec,
   ytdlPath: ytdlPathPreference,
   ffmpegPath: ffmpegPathPreference,
   ffprobePath: ffprobePathPreference,
@@ -27,6 +28,17 @@ export const {
   denoPath: denoPathPreference,
   monolithPath: monolithPathPreference,
 } = getPreferenceValues<ExtensionPreferences>();
+
+/**
+ * Resolve the watchdog idle window for child-process spawns. Reads
+ * `networkIdleTimeoutSec` from preferences and falls back to 120 seconds when
+ * the value is missing, non-numeric, or non-positive — defensive because the
+ * preference is a free-form text field.
+ */
+export function getIdleTimeoutMs(): number {
+  const parsed = Number(networkIdleTimeoutSec);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 1000) : 120_000;
+}
 
 /**
  * Resolve the Homebrew CLI. Honors the user's preference when it exists on

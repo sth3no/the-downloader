@@ -1,9 +1,11 @@
-import { spawn } from "node:child_process";
+import { DEFAULT_IDLE_MS, runWithWatchdog } from "./run.js";
 
 export type GalleryDownloadOptions = {
   url: string;
   destination: string;
   cookiesFromBrowser?: string;
+  /** Idle-watchdog window in ms. Defaults to DEFAULT_IDLE_MS if omitted. */
+  idleMs?: number;
 };
 
 /** Build gallery-dl CLI args. `-d` is the base dir; gallery-dl creates per-site subfolders. */
@@ -25,33 +27,27 @@ export function isLoginRequiredError(error: unknown): boolean {
   return /redirect to login|login required|authentication required/i.test(error.message);
 }
 
-
 export type GalleryProgress = { files: number };
 
-/** Run gallery-dl; onProgress fires as files land. Resolves with the count or rejects with stderr. */
-export function runGalleryDownload(
+/** Run gallery-dl; onProgress fires as files land. Resolves with the count or rejects with stderr or a watchdog kill. */
+export async function runGalleryDownload(
   binaryPath: string,
   options: GalleryDownloadOptions,
   onProgress: (p: GalleryProgress) => void,
 ): Promise<GalleryProgress> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(binaryPath, buildGalleryArgs(options));
-    let files = 0;
-    let stderr = "";
-    child.stdout.on("data", (data: Buffer) => {
-      // gallery-dl prints one downloaded file path per line, so non-empty lines ≈ files downloaded (progress estimate).
-      const lines = data
-        .toString()
-        .split("\n")
-        .filter((l) => l.trim().length > 0);
+  let files = 0;
+  const handleStdout = (chunk: string) => {
+    // gallery-dl prints one downloaded file path per line, so non-empty lines ≈ files downloaded (progress estimate).
+    const lines = chunk.split("\n").filter((l) => l.trim().length > 0);
+    if (lines.length > 0) {
       files += lines.length;
       onProgress({ files });
-    });
-    child.stderr.on("data", (data: Buffer) => (stderr += data.toString()));
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve({ files });
-      else reject(new Error(stderr.trim() || `gallery-dl exited with code ${code}`));
-    });
+    }
+  };
+  const { code, stderr } = await runWithWatchdog(binaryPath, buildGalleryArgs(options), {
+    idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
+    onStdoutChunk: handleStdout,
   });
+  if (code === 0) return { files };
+  throw new Error(stderr.trim() || `gallery-dl exited with code ${code}`);
 }

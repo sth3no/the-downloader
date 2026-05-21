@@ -10,6 +10,7 @@ function fakeChild() {
   const child = new EventEmitter() as any;
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
+  child.kill = vi.fn();
   return child;
 }
 
@@ -25,9 +26,9 @@ describe("buildMonolithArgs", () => {
   });
 
   it("adds --no-js for Lightweight mode", () => {
-    expect(
-      buildMonolithArgs({ url: "https://example.com/x", outputPath: "/d/page.html", noJavaScript: true }),
-    ).toEqual(["--output", "/d/page.html", "--no-js", "https://example.com/x"]);
+    expect(buildMonolithArgs({ url: "https://example.com/x", outputPath: "/d/page.html", noJavaScript: true })).toEqual(
+      ["--output", "/d/page.html", "--no-js", "https://example.com/x"],
+    );
   });
 });
 
@@ -104,5 +105,41 @@ describe("runMonolithSave", () => {
     child.emit("error", new Error("spawn ENOENT"));
 
     await expect(promise).rejects.toThrow("spawn ENOENT");
+  });
+
+  it("closes stdin so monolith cannot block on an interactive prompt", () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    runMonolithSave("/monolith", { url: "https://example.com/x", outputPath: "/d/page.html", noJavaScript: false });
+
+    expect(spawn).toHaveBeenCalledWith(
+      "/monolith",
+      expect.any(Array),
+      expect.objectContaining({ stdio: ["ignore", "pipe", "pipe"] }),
+    );
+  });
+
+  it("kills monolith and rejects when no output arrives within options.idleMs (CDN stall)", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = fakeChild();
+      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+      const promise = runMonolithSave("/monolith", {
+        url: "https://example.com/x",
+        outputPath: "/d/page.html",
+        noJavaScript: false,
+        idleMs: 5_000,
+      });
+      const assertion = expect(promise).rejects.toThrow(/no output|stuck|killed/i);
+
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      await assertion;
+      expect(child.kill).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

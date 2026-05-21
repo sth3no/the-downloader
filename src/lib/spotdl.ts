@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { DEFAULT_IDLE_MS } from "./run.js";
 import { invalidateSpotipyCacheIfStale } from "./spotdl-cache.js";
 
 export type SpotdlDownloadOptions = {
@@ -25,6 +26,8 @@ export type SpotdlDownloadOptions = {
    * never change credentials between runs don't need this.
    */
   supportDir?: string;
+  /** Idle-watchdog window in ms. Defaults to DEFAULT_IDLE_MS if omitted. */
+  idleMs?: number;
 };
 
 /** Matches both `https://open.spotify.com[/<locale>]/playlist/...` URLs and `spotify:playlist:...` URIs. */
@@ -164,13 +167,11 @@ export class SpotdlDownloadError extends Error {
   }
 }
 
-/**
- * Kill spotdl after this long with no stdout/stderr output. Real downloads emit
- * progress lines well within this window even on slow networks. A silent gap
- * past it means spotdl is wedged (e.g. waiting on an OAuth callback that won't
- * arrive under Raycast) — better to surface a clear error than leave zombies.
- */
-const SPOTDL_IDLE_TIMEOUT_MS = 120_000;
+// The idle window comes from the Network: Idle Timeout preference via
+// getIdleTimeoutMs(); the watchdog kills the child when nothing arrives on
+// either stream for that long. Real downloads emit progress lines well within
+// it even on slow networks; a silent gap past it usually means spotdl is
+// wedged (e.g. waiting on an OAuth callback that won't arrive under Raycast).
 
 /**
  * Run spotDL; onProgress fires as tracks complete. Resolves with the track count
@@ -210,6 +211,7 @@ export function runSpotdlDownload(
       fn();
     };
 
+    const idleMs = options.idleMs ?? DEFAULT_IDLE_MS;
     const resetIdle = () => {
       if (settled) return;
       if (idleTimer) clearTimeout(idleTimer);
@@ -220,13 +222,14 @@ export function runSpotdlDownload(
           } catch {
             /* child may already be dead */
           }
+          const seconds = Math.round(idleMs / 1000);
           reject(
             new Error(
-              `spotdl produced no output for 2 minutes and was killed. This usually means it is stuck on an auth or network step; check SPOTIFY.md or retry.`,
+              `spotdl produced no output for ${seconds}s and was killed. This usually means it is stuck on an auth or network step; check SPOTIFY.md or retry.`,
             ),
           );
         });
-      }, SPOTDL_IDLE_TIMEOUT_MS);
+      }, idleMs);
     };
     resetIdle();
 

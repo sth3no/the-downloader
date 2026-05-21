@@ -25,6 +25,7 @@ import {
   downloadPath,
   getDenoPath,
   getGalleryDlPath,
+  getIdleTimeoutMs,
   getMonolithPath,
   getSpotdlPath,
   getffmpegPath,
@@ -95,7 +96,12 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
     try {
       const { files } = await runGalleryDownload(
         galleryDlPath,
-        { url, destination: downloadPath, cookiesFromBrowser: browser.spec || undefined },
+        {
+          url,
+          destination: downloadPath,
+          cookiesFromBrowser: browser.spec || undefined,
+          idleMs: getIdleTimeoutMs(),
+        },
         (p) => {
           toast.message = `${p.files} files`;
         },
@@ -161,6 +167,7 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
           clientSecret,
           userAuth: spotifyUserAuth,
           supportDir: environment.supportPath,
+          idleMs: getIdleTimeoutMs(),
         },
         (p) => {
           toast.message = `${p.tracks} tracks`;
@@ -207,6 +214,7 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
         url,
         outputPath,
         noJavaScript: webpageSaveMode === "lightweight",
+        idleMs: getIdleTimeoutMs(),
       });
       toast.style = Toast.Style.Success;
       toast.title = "Saved";
@@ -244,7 +252,7 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
   try {
     const { filePath } = await runVideoDownload(
       ytdlPath,
-      { url, format, outputTemplate, ffmpegPath, denoPath },
+      { url, format, outputTemplate, ffmpegPath, denoPath, idleMs: getIdleTimeoutMs() },
       (percent) => {
         toast.message = `${Math.floor(percent)}%`;
       },

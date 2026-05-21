@@ -34,6 +34,7 @@ import {
   getFormatTitle,
   getFormatValue,
   getGalleryDlPath,
+  getIdleTimeoutMs,
   getMonolithPath,
   getSpotdlPath,
   getffmpegPath,
@@ -201,6 +202,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
           url: submitUrl,
           outputPath: path.join(folder, webpageFilename(submitUrl)),
           noJavaScript: values.saveMode === "lightweight",
+          idleMs: getIdleTimeoutMs(),
         });
         toast.style = Toast.Style.Success;
         toast.title = "Webpage Saved";
@@ -245,7 +247,12 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       try {
         const { files } = await runGalleryDownload(
           getGalleryDlPath(),
-          { url: submitUrl, destination: folder, cookiesFromBrowser: browser.spec || undefined },
+          {
+            url: submitUrl,
+            destination: folder,
+            cookiesFromBrowser: browser.spec || undefined,
+            idleMs: getIdleTimeoutMs(),
+          },
           (p) => {
             toast.message = `${p.files} files`;
           },
@@ -275,6 +282,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         const { filePath } = await runThumbnailDownload(getytdlPath(), {
           url: submitUrl,
           outputTemplate: path.join(folder, "%(title)s (%(id)s).%(ext)s"),
+          idleMs: getIdleTimeoutMs(),
         });
         toast.style = Toast.Style.Success;
         toast.title = "Thumbnail Saved";
@@ -330,6 +338,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             clientSecret,
             userAuth,
             supportDir: environment.supportPath,
+            idleMs: getIdleTimeoutMs(),
           },
           (p) => {
             toast.message = `${p.tracks} tracks`;
@@ -377,6 +386,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
           outputTemplate: path.join(folder, "%(title)s (%(id)s).%(ext)s"),
           ffmpegPath: getffmpegPath(),
           denoPath: fs.existsSync(denoPath) ? denoPath : undefined,
+          idleMs: getIdleTimeoutMs(),
         },
         (percent) => {
           toast.message = `${Math.floor(percent)}%`;

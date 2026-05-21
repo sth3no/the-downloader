@@ -7,9 +7,10 @@ import { spawn } from "node:child_process";
 import { buildThumbnailArgs, buildVideoDownloadArgs, runVideoDownload } from "../src/lib/ytdlp";
 
 function fakeChild() {
-  const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter };
+  const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => void };
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
+  child.kill = vi.fn();
   return child;
 }
 
@@ -102,13 +103,44 @@ describe("runVideoDownload", () => {
 
     await expect(promise).rejects.toThrow("ERROR: Video unavailable");
   });
+
+  it("closes stdin so yt-dlp cannot hang on an interactive prompt (2FA, cookie passphrase, etc.)", () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    runVideoDownload("/yt-dlp", options, vi.fn());
+
+    expect(spawn).toHaveBeenCalledWith(
+      "/yt-dlp",
+      expect.any(Array),
+      expect.objectContaining({ stdio: ["ignore", "pipe", "pipe"] }),
+    );
+  });
+
+  it("kills yt-dlp and rejects when no output arrives within options.idleMs", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = fakeChild();
+      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+      const promise = runVideoDownload("/yt-dlp", { ...options, idleMs: 5_000 }, vi.fn());
+      const assertion = expect(promise).rejects.toThrow(/no output|stuck|killed/i);
+
+      // yt-dlp prints an extractor selection line, then hangs.
+      child.stdout.emit("data", Buffer.from("[youtube] Extracting video info...\n"));
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      await assertion;
+      expect(child.kill).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("buildThumbnailArgs", () => {
   it("builds args that fetch only the thumbnail image", () => {
-    expect(
-      buildThumbnailArgs({ url: "https://example.com/v", outputTemplate: "/out/%(title)s.%(ext)s" }),
-    ).toEqual([
+    expect(buildThumbnailArgs({ url: "https://example.com/v", outputTemplate: "/out/%(title)s.%(ext)s" })).toEqual([
       "--write-thumbnail",
       "--skip-download",
       "--no-playlist",

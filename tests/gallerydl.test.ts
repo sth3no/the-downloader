@@ -10,23 +10,29 @@ function fakeChild() {
   const child = new EventEmitter() as any;
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
+  child.kill = vi.fn();
   return child;
 }
 
 describe("buildGalleryArgs", () => {
   it("sets the base destination with -d", () => {
-    expect(buildGalleryArgs({ url: "https://imgur.com/a/x", destination: "/Downloads" }))
-      .toEqual(["-d", "/Downloads", "https://imgur.com/a/x"]);
+    expect(buildGalleryArgs({ url: "https://imgur.com/a/x", destination: "/Downloads" })).toEqual([
+      "-d",
+      "/Downloads",
+      "https://imgur.com/a/x",
+    ]);
   });
 
   it("adds --cookies-from-browser when a browser is set", () => {
-    expect(buildGalleryArgs({ url: "https://pixiv.net/u/1", destination: "/d", cookiesFromBrowser: "safari" }))
-      .toEqual(["-d", "/d", "--cookies-from-browser", "safari", "https://pixiv.net/u/1"]);
+    expect(buildGalleryArgs({ url: "https://pixiv.net/u/1", destination: "/d", cookiesFromBrowser: "safari" })).toEqual(
+      ["-d", "/d", "--cookies-from-browser", "safari", "https://pixiv.net/u/1"],
+    );
   });
 
   it("omits cookies when none is set", () => {
-    expect(buildGalleryArgs({ url: "https://imgur.com/a/x", destination: "/d", cookiesFromBrowser: "" }))
-      .not.toContain("--cookies-from-browser");
+    expect(buildGalleryArgs({ url: "https://imgur.com/a/x", destination: "/d", cookiesFromBrowser: "" })).not.toContain(
+      "--cookies-from-browser",
+    );
   });
 });
 
@@ -63,6 +69,41 @@ describe("runGalleryDownload", () => {
     child.emit("close", 1);
 
     await expect(promise).rejects.toThrow("unsupported URL");
+  });
+
+  it("closes stdin so gallery-dl cannot block on a password prompt for a logged-in site", () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    runGalleryDownload("/gallery-dl", { url: "https://imgur.com/a/x", destination: "/tmp" }, vi.fn());
+
+    expect(spawn).toHaveBeenCalledWith(
+      "/gallery-dl",
+      expect.any(Array),
+      expect.objectContaining({ stdio: ["ignore", "pipe", "pipe"] }),
+    );
+  });
+
+  it("kills gallery-dl and rejects when no file appears within options.idleMs (e.g. rate-limit backoff)", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = fakeChild();
+      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+      const promise = runGalleryDownload(
+        "/gallery-dl",
+        { url: "https://imgur.com/a/x", destination: "/tmp", idleMs: 5_000 },
+        vi.fn(),
+      );
+      const assertion = expect(promise).rejects.toThrow(/no output|stuck|killed/i);
+
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      await assertion;
+      expect(child.kill).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

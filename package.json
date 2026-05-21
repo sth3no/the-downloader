@@ -300,6 +300,14 @@
       "label": "Enable",
       "default": false,
       "required": false
+    },
+    {
+      "name": "networkIdleTimeoutSec",
+      "title": "Network: Idle Timeout",
+      "description": "Seconds of silence from a download before the extension assumes it is wedged and kills the child process. Real downloads emit progress every second, so 120 is plenty for fast networks; raise it on very slow links. Integer; default 120.",
+      "type": "textfield",
+      "default": "120",
+      "required": false
     }
   ],
   "ai": {

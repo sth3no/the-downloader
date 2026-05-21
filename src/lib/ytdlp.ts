@@ -1,6 +1,6 @@
-import { spawn } from "node:child_process";
 import { execa } from "execa";
 import { Video } from "../types.js";
+import { DEFAULT_IDLE_MS, runWithWatchdog } from "./run.js";
 
 /** Fetch yt-dlp metadata for a URL via --dump-json. `denoPath`, when given, points yt-dlp at its JS runtime. */
 export async function fetchVideoInfo(
@@ -31,6 +31,8 @@ export type VideoDownloadArgs = {
   outputTemplate: string;
   ffmpegPath: string;
   denoPath?: string;
+  /** Idle-watchdog window in ms. Defaults to DEFAULT_IDLE_MS if omitted. */
+  idleMs?: number;
 };
 
 /**
@@ -58,48 +60,42 @@ export type VideoDownloadResult = { filePath: string };
 /**
  * Run yt-dlp for a media download. `onProgress` receives the download percentage
  * as yt-dlp reports it. Resolves with the downloaded file path on a zero exit;
- * rejects with the stderr text on a non-zero exit. Progress and the
- * `after_move:filepath` line are read from stdout.
+ * rejects with the stderr text on a non-zero exit, or with a watchdog error if
+ * yt-dlp stalls. Progress and the `after_move:filepath` line are read from stdout.
  */
-export function runVideoDownload(
+export async function runVideoDownload(
   binaryPath: string,
   options: VideoDownloadArgs,
   onProgress: (percent: number) => void,
 ): Promise<VideoDownloadResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(binaryPath, buildVideoDownloadArgs(options), {
-      env: { ...process.env, PYTHONUNBUFFERED: "1" },
-    });
-    let filePath = "";
-    let stderr = "";
-    child.stdout.on("data", (data: Buffer) => {
-      for (const line of data.toString().split("\n")) {
-        const progress = /\[download\]\s+(\d+(?:\.\d+)?)%/.exec(line);
-        if (progress) {
-          onProgress(Number(progress[1]));
-        } else {
-          const trimmed = line.trim();
-          if (trimmed.startsWith("/") || /^[a-zA-Z]:\\/.test(trimmed)) {
-            filePath = trimmed;
-          }
+  let filePath = "";
+  const handleStdout = (chunk: string) => {
+    for (const line of chunk.split("\n")) {
+      const progress = /\[download\]\s+(\d+(?:\.\d+)?)%/.exec(line);
+      if (progress) {
+        onProgress(Number(progress[1]));
+      } else {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("/") || /^[a-zA-Z]:\\/.test(trimmed)) {
+          filePath = trimmed;
         }
       }
-    });
-    child.stderr.on("data", (data: Buffer) => (stderr += data.toString()));
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ filePath });
-      } else {
-        reject(new Error(stderr.trim() || `yt-dlp exited with code ${code}`));
-      }
-    });
+    }
+  };
+  const { code, stderr } = await runWithWatchdog(binaryPath, buildVideoDownloadArgs(options), {
+    idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
+    env: { ...process.env, PYTHONUNBUFFERED: "1" },
+    onStdoutChunk: handleStdout,
   });
+  if (code === 0) return { filePath };
+  throw new Error(stderr.trim() || `yt-dlp exited with code ${code}`);
 }
 
 export type ThumbnailDownloadArgs = {
   url: string;
   outputTemplate: string;
+  /** Idle-watchdog window in ms. Defaults to DEFAULT_IDLE_MS if omitted. */
+  idleMs?: number;
 };
 
 /** Build yt-dlp CLI args to fetch only a URL's thumbnail image; the video itself is skipped. */
@@ -115,24 +111,22 @@ export type ThumbnailResult = { filePath: string };
  * rejects with the stderr text on a non-zero exit. If the path line is not matched
  * the promise still resolves, with an empty `filePath`.
  */
-export function runThumbnailDownload(binaryPath: string, options: ThumbnailDownloadArgs): Promise<ThumbnailResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(binaryPath, buildThumbnailArgs(options), {
-      env: { ...process.env, PYTHONUNBUFFERED: "1" },
-    });
-    let filePath = "";
-    let stderr = "";
-    child.stdout.on("data", (data: Buffer) => {
-      for (const line of data.toString().split("\n")) {
-        const match = /Writing .*?thumbnail.*? to:\s*(.+)$/.exec(line.trim());
-        if (match) filePath = match[1].trim();
-      }
-    });
-    child.stderr.on("data", (data: Buffer) => (stderr += data.toString()));
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve({ filePath });
-      else reject(new Error(stderr.trim() || `yt-dlp exited with code ${code}`));
-    });
+export async function runThumbnailDownload(
+  binaryPath: string,
+  options: ThumbnailDownloadArgs,
+): Promise<ThumbnailResult> {
+  let filePath = "";
+  const handleStdout = (chunk: string) => {
+    for (const line of chunk.split("\n")) {
+      const match = /Writing .*?thumbnail.*? to:\s*(.+)$/.exec(line.trim());
+      if (match) filePath = match[1].trim();
+    }
+  };
+  const { code, stderr } = await runWithWatchdog(binaryPath, buildThumbnailArgs(options), {
+    idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
+    env: { ...process.env, PYTHONUNBUFFERED: "1" },
+    onStdoutChunk: handleStdout,
   });
+  if (code === 0) return { filePath };
+  throw new Error(stderr.trim() || `yt-dlp exited with code ${code}`);
 }
