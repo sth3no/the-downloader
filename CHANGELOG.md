@@ -8,6 +8,7 @@
 - **Concurrent-submit guard** on the Download form: a second submit while a download is already running now shows a clear "A download is already running" toast instead of firing a second runner that races the first for the same output filename.
 - **URL scheme allowlist**: `isValidUrl` now restricts to `http`/`https`. `javascript:`, `file:`, `data:`, and `ftp:` URLs are rejected up front, preventing the downstream tools from receiving inputs they were never meant to handle (yt-dlp's generic extractor on a `file:` URL, etc.). Protocol-less inputs like `youtube.com/watch?v=…` still work — they're prefixed with `https://` at the use site.
 - **yt-dlp filepath extraction** now uses a sentinel tag (`THE-DOWNLOADER-FILEPATH:…`) on the `after_move` print line. Previously the runner picked up the last stdout line that started with `/`, which could be an intermediate `[ExtractAudio] Destination: …` from a post-processor — so "Open File" sometimes opened the intermediate file (or nothing) instead of the final output. The tagged line is unambiguous.
+- **`fetchVideoInfo` is resilient to debug/warning lines** before the JSON. `--no-warnings --quiet` are passed to yt-dlp to keep stdout clean, and the JSON parser scans for the first line that starts with `{` instead of blindly `JSON.parse`-ing stdout. The Download form no longer goes silently blank when yt-dlp prints a debug header.
 
 ## [Fix: macOS Stability] - 2026-05-21
 

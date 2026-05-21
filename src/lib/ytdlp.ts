@@ -2,6 +2,23 @@ import { execa } from "execa";
 import { Video } from "../types.js";
 import { DEFAULT_IDLE_MS, runWithWatchdog } from "./run.js";
 
+/**
+ * Pull the first JSON object out of yt-dlp's stdout. yt-dlp can emit `[debug]`
+ * or `[warning]` lines on stdout before the JSON when its config has tracing
+ * on, so a naive `JSON.parse(stdout)` would throw a SyntaxError and the form
+ * silently treats the URL as unknown. Scan for the first line that starts with
+ * `{` and parse from there.
+ */
+export function extractDumpJson(stdout: string): Video {
+  const lines = stdout.split("\n");
+  const jsonStart = lines.findIndex((line) => line.trimStart().startsWith("{"));
+  if (jsonStart === -1) {
+    throw new Error("yt-dlp produced no JSON metadata. Try updating yt-dlp via the Update Libraries action.");
+  }
+  const json = lines.slice(jsonStart).join("\n");
+  return JSON.parse(json) as Video;
+}
+
 /** Fetch yt-dlp metadata for a URL via --dump-json. `denoPath`, when given, points yt-dlp at its JS runtime. */
 export async function fetchVideoInfo(
   ytdlPath: string,
@@ -16,13 +33,15 @@ export async function fetchVideoInfo(
       denoPath ? "--js-runtimes" : "",
       denoPath ? `deno:${denoPath}` : "",
       "--no-playlist",
+      "--no-warnings",
+      "--quiet",
       "--dump-json",
       "--format-sort=resolution,ext,tbr",
       url,
     ].filter(Boolean),
     { env: { ...process.env, PYTHONUNBUFFERED: "1" } },
   );
-  return JSON.parse(result.stdout) as Video;
+  return extractDumpJson(result.stdout);
 }
 
 export type VideoDownloadArgs = {

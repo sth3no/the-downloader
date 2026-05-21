@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
 import { spawn } from "node:child_process";
-import { buildThumbnailArgs, buildVideoDownloadArgs, runVideoDownload } from "../src/lib/ytdlp";
+import { buildThumbnailArgs, buildVideoDownloadArgs, extractDumpJson, runVideoDownload } from "../src/lib/ytdlp";
 
 function fakeChild() {
   const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => void };
@@ -153,6 +153,35 @@ describe("runVideoDownload", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("extractDumpJson", () => {
+  const json = JSON.stringify({ title: "Hello", duration: 42, formats: [] });
+
+  it("parses a clean JSON-only stdout", () => {
+    expect(extractDumpJson(json)).toMatchObject({ title: "Hello" });
+  });
+
+  it("skips a [debug] line emitted before the JSON", () => {
+    expect(extractDumpJson(`[debug] 2026-05-21 12:00:00 loading plugin\n${json}`)).toMatchObject({ title: "Hello" });
+  });
+
+  it("skips a [warning] line emitted before the JSON", () => {
+    expect(extractDumpJson(`[youtube] WARNING: Falling back to web client\n${json}`)).toMatchObject({ title: "Hello" });
+  });
+
+  it("skips multiple noise lines before the JSON", () => {
+    const noisy = ["[debug] foo", "[warning] bar", "[info] baz", json].join("\n");
+    expect(extractDumpJson(noisy)).toMatchObject({ title: "Hello" });
+  });
+
+  it("throws a clear error when stdout contains no JSON object", () => {
+    expect(() => extractDumpJson("[error] Sign in to confirm you're not a bot")).toThrow(/no JSON metadata/);
+  });
+
+  it("throws a clear error on empty stdout", () => {
+    expect(() => extractDumpJson("")).toThrow(/no JSON metadata/);
   });
 });
 
