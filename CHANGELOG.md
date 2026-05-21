@@ -1,5 +1,12 @@
 # Video Downloader Changelog
 
+## [Fix: macOS Stability] - 2026-05-21
+
+- **Binary resolution** now searches a list of well-known macOS install locations — Apple Silicon Homebrew, Intel Homebrew, MacPorts, pipx user (`~/.local/bin`), Cargo (`~/.cargo/bin`), pyenv shims, and the inherited `PATH` — instead of assuming `/opt/homebrew/bin`. Intel Macs and pipx/Cargo installs of yt-dlp, gallery-dl, spotDL, and monolith are detected without the user setting per-tool path preferences.
+- **Homebrew path** auto-detects when the configured preference doesn't exist on disk, so an Intel Mac with the Apple-Silicon default no longer fails with "Cannot find Homebrew".
+- **Per-tool installs**: the installer now installs just the missing formula instead of all five Homebrew tools at once — faster, and one tool's install failure no longer blocks the others.
+- **Per-tool upgrades**: the updater now upgrades each Homebrew formula individually, so one formula failure no longer aborts the rest.
+
 ## [Feat: Redesigned Download Form] - 2026-05-19
 
 - Rebuilt the **Download** command around a single adaptive form: paste a URL, pick a **Filetype** — Video, Audio, Image, Transcript, or Website — and the form shows just the options that filetype needs. The filetype is auto-detected and overridable, so a misdetected URL is one click from the right tool.

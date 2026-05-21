@@ -12,8 +12,8 @@ import {
   showToast,
 } from "@raycast/api";
 import { ExecaError, execa } from "execa";
-import { getWingetPath, homebrewPath, isMac, isWindows } from "../utils.js";
-import { HOMEBREW_FORMULAE, isManagedTool, wingetIdFor } from "../lib/tools.js";
+import { getHomebrewPath, getWingetPath, isMac, isWindows } from "../utils.js";
+import { homebrewFormulaFor, isManagedTool, wingetIdFor } from "../lib/tools.js";
 import { downloadSpotdl } from "../lib/managed-binary.js";
 
 const macOSInstallGuide = (executable: string) => `
@@ -119,22 +119,14 @@ function ManagedInstall({
   const [isLoading, setIsLoading] = useState(false);
 
   const setupGuideAction = (
-    <Action
-      title="Open Setup Guide"
-      icon={Icon.QuestionMarkCircle}
-      onAction={() => open(SPOTDL_SETUP_GUIDE_URL)}
-    />
+    <Action title="Open Setup Guide" icon={Icon.QuestionMarkCircle} onAction={() => open(SPOTDL_SETUP_GUIDE_URL)} />
   );
 
   if (installed) {
     return (
       <ActionPanel>
         <Action title="Continue" icon={Icon.ArrowRight} onAction={onContinue} />
-        <Action
-          title="Open Extension Preferences"
-          icon={Icon.Cog}
-          onAction={openExtensionPreferences}
-        />
+        <Action title="Open Extension Preferences" icon={Icon.Cog} onAction={openExtensionPreferences} />
         {executable === "spotdl" && setupGuideAction}
       </ActionPanel>
     );
@@ -205,7 +197,7 @@ function AutoInstall({ executable, onRefresh }: { executable: string; onRefresh:
             await installationToast.show();
 
             try {
-              await execa(homebrewPath, ["install", ...HOMEBREW_FORMULAE]);
+              await execa(getHomebrewPath(), ["install", homebrewFormulaFor(executable)]);
               await installationToast.hide();
               onRefresh();
             } catch (error) {

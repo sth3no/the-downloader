@@ -1,9 +1,10 @@
+import * as fs from "node:fs";
 import { getPreferenceValues, environment } from "@raycast/api";
 import { formatDuration, intervalToDuration } from "date-fns";
 import validator from "validator";
 import { Format, Video } from "./types.js";
 import { execSync } from "child_process";
-import { resolveBinary, isWindows, isMac } from "./lib/binary.js";
+import { findHomebrewPath, resolveBinary, isWindows, isMac } from "./lib/binary.js";
 
 export { isWindows, isMac };
 
@@ -13,7 +14,7 @@ function sanitizeWindowsPath(path: string): string {
 
 export const {
   downloadPath,
-  homebrewPath,
+  homebrewPath: homebrewPathPreference,
   autoLoadUrlFromClipboard,
   autoLoadUrlFromSelectedText,
   enableBrowserExtensionSupport,
@@ -26,6 +27,19 @@ export const {
   denoPath: denoPathPreference,
   monolithPath: monolithPathPreference,
 } = getPreferenceValues<ExtensionPreferences>();
+
+/**
+ * Resolve the Homebrew CLI. Honors the user's preference when it exists on
+ * disk (covers custom installs and multi-user setups); otherwise falls back
+ * to auto-detection so an Intel Mac with the Apple-Silicon default still
+ * works without the user fixing the preference.
+ */
+export function getHomebrewPath(): string {
+  if (homebrewPathPreference && fs.existsSync(homebrewPathPreference)) {
+    return homebrewPathPreference;
+  }
+  return findHomebrewPath();
+}
 
 export async function getWingetPath() {
   try {

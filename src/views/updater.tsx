@@ -1,22 +1,10 @@
 import { useEffect, useState } from "react";
 import fs from "node:fs";
-import {
-  Action,
-  ActionPanel,
-  Clipboard,
-  Detail,
-  Icon,
-  Toast,
-  environment,
-  getPreferenceValues,
-  useNavigation,
-} from "@raycast/api";
+import { Action, ActionPanel, Clipboard, Detail, Icon, Toast, environment, useNavigation } from "@raycast/api";
 import { execa } from "execa";
-import { getSpotdlPath, getWingetPath, isMac, isWindows } from "../utils.js";
+import { getHomebrewPath, getSpotdlPath, getWingetPath, isMac, isWindows } from "../utils.js";
 import { downloadSpotdl, getInstalledVersion, getLatestRelease } from "../lib/managed-binary.js";
 import { friendlyNameFor, HOMEBREW_FORMULAE, WINGET_PACKAGES } from "../lib/tools.js";
-
-const { homebrewPath } = getPreferenceValues<ExtensionPreferences>();
 
 export default function Updater() {
   const { pop } = useNavigation();
@@ -121,7 +109,7 @@ async function getSpotdlVersion(): Promise<string> {
 async function getVersions() {
   const versions: Record<string, string> = {};
   if (isMac) {
-    const { stdout: infoOutput } = await execa(homebrewPath, ["info", "--json=v2", ...HOMEBREW_FORMULAE]);
+    const { stdout: infoOutput } = await execa(getHomebrewPath(), ["info", "--json=v2", ...HOMEBREW_FORMULAE]);
     const info = JSON.parse(infoOutput) as { formulae: { name: string; versions: { stable: string } }[] };
     for (const { name, versions: formulaVersions } of info.formulae) {
       versions[name] = formulaVersions.stable;
@@ -161,7 +149,7 @@ function parseWingetVersion(output: string, packageId: string): string {
 async function getOutdated() {
   const outdated: Record<string, string> = {};
   if (isMac) {
-    const { stdout: outdatedOutput } = await execa(homebrewPath, ["outdated", "--json=v2", ...HOMEBREW_FORMULAE]);
+    const { stdout: outdatedOutput } = await execa(getHomebrewPath(), ["outdated", "--json=v2", ...HOMEBREW_FORMULAE]);
     const info = JSON.parse(outdatedOutput) as { formulae: { name: string; current_version: string }[] };
     for (const { name, current_version } of info.formulae) {
       outdated[name] = current_version;
@@ -201,7 +189,18 @@ async function getOutdated() {
 
 async function upgrade() {
   if (isMac) {
-    await execa(homebrewPath, ["upgrade", ...HOMEBREW_FORMULAE]);
+    const brew = getHomebrewPath();
+    const failures: { formula: string; error: unknown }[] = [];
+    for (const formula of HOMEBREW_FORMULAE) {
+      try {
+        await execa(brew, ["upgrade", formula]);
+      } catch (error) {
+        failures.push({ formula, error });
+      }
+    }
+    if (failures.length === HOMEBREW_FORMULAE.length) {
+      throw failures[0].error;
+    }
   } else if (isWindows) {
     const wingetPath = await getWingetPath();
     for (const pkg of WINGET_PACKAGES) {
