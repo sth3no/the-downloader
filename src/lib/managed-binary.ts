@@ -6,8 +6,42 @@ import { isMac, isWindows } from "./binary.js";
 const RELEASE_API = "https://api.github.com/repos/spotDL/spotify-downloader/releases/latest";
 const USER_AGENT = "the-downloader-raycast";
 
+const ROSETTA_RUNTIME_PATH = "/Library/Apple/usr/share/rosetta/rosetta";
+
 export type ReleaseAsset = { name: string; url: string };
 export type SpotdlRelease = { version: string; assets: ReleaseAsset[] };
+
+/**
+ * True when the current process is running on Apple Silicon (arm64 macOS).
+ * Used to decide whether the x86_64-only spotDL prebuilt binary needs Rosetta
+ * to run. Intel Macs return false (binary runs natively); Apple Silicon Macs
+ * return true (binary needs Rosetta 2 translation).
+ */
+export function isAppleSilicon(): boolean {
+  return process.platform === "darwin" && process.arch === "arm64";
+}
+
+/**
+ * Cheap, no-spawn check for Rosetta 2. The Rosetta runtime is installed at
+ * `/Library/Apple/usr/share/rosetta/rosetta` from macOS Big Sur onward; the
+ * file is absent on a clean Apple Silicon Mac until Rosetta is installed via
+ * `softwareupdate --install-rosetta`. Returns false on Intel Macs and Windows
+ * — those don't need Rosetta in the first place.
+ */
+export function isRosettaInstalled(): boolean {
+  if (!isAppleSilicon()) return true;
+  return fs.existsSync(ROSETTA_RUNTIME_PATH);
+}
+
+/** Friendly error thrown when spotDL can't run because Rosetta 2 is missing on Apple Silicon. */
+export class RosettaRequiredError extends Error {
+  constructor() {
+    super(
+      "spotDL requires Rosetta 2 on Apple Silicon (the prebuilt binary is x86_64-only). Install it by opening Terminal and running: softwareupdate --install-rosetta --agree-to-license",
+    );
+    this.name = "RosettaRequiredError";
+  }
+}
 
 /**
  * Pick the spotDL release asset for a platform. spotDL publishes one binary per
@@ -75,6 +109,7 @@ export async function downloadSpotdl(supportDir: string): Promise<string> {
     } catch {
       // codesign unavailable or signing rejected — the binary may still run.
     }
+    if (!isRosettaInstalled()) throw new RosettaRequiredError();
   }
   return finalPath;
 }

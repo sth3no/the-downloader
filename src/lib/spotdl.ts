@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { invalidateSpotipyCacheIfStale } from "./spotdl-cache.js";
 
 export type SpotdlDownloadOptions = {
   url: string;
@@ -17,6 +18,13 @@ export type SpotdlDownloadOptions = {
    * child if the callback never arrives.
    */
   userAuth?: boolean;
+  /**
+   * Raycast support directory. Used to persist the credentials fingerprint so
+   * spotDL's cached OAuth token can be invalidated when credentials change
+   * (upstream #2606). When omitted, the cache is left alone — callers that
+   * never change credentials between runs don't need this.
+   */
+  supportDir?: string;
 };
 
 /** Matches both `https://open.spotify.com[/<locale>]/playlist/...` URLs and `spotify:playlist:...` URIs. */
@@ -35,9 +43,7 @@ const PLAYLIST_URL = /(?:\/|:)playlist(?:\/|:)/i;
  */
 export function buildSpotdlArgs(o: SpotdlDownloadOptions): string[] {
   const isPlaylist = PLAYLIST_URL.test(o.url);
-  const template = isPlaylist
-    ? "{list-name}/{artists} - {title}.{output-ext}"
-    : "{artists} - {title}.{output-ext}";
+  const template = isPlaylist ? "{list-name}/{artists} - {title}.{output-ext}" : "{artists} - {title}.{output-ext}";
   const args = [
     "download",
     o.url,
@@ -102,6 +108,13 @@ export function summarizeSpotdlError(rawOutput: string): SpotdlErrorSummary {
       message:
         "Set 'Spotify: Client ID' and 'Spotify: Client Secret' in extension preferences. See SPOTIFY.md for the one-minute setup.",
       action: "open-preferences",
+    };
+  }
+  if (/Bad CPU type in executable|ENOEXEC|cannot execute binary file/i.test(rawOutput)) {
+    return {
+      title: "spotDL needs Rosetta 2",
+      message:
+        "The spotDL prebuilt binary is x86_64-only. Open Terminal and run: softwareupdate --install-rosetta --agree-to-license — then retry the download.",
     };
   }
   if (/redirect_uri.*Not\s*matching/i.test(rawOutput)) {
@@ -172,6 +185,14 @@ export function runSpotdlDownload(
   options: SpotdlDownloadOptions,
   onProgress: (p: SpotdlProgress) => void,
 ): Promise<SpotdlProgress> {
+  if (options.supportDir) {
+    invalidateSpotipyCacheIfStale(
+      options.supportDir,
+      options.clientId,
+      options.clientSecret,
+      Boolean(options.userAuth),
+    );
+  }
   return new Promise((resolve, reject) => {
     const child = spawn(binaryPath, buildSpotdlArgs(options), {
       stdio: ["ignore", "pipe", "pipe"],

@@ -8,6 +8,7 @@ import {
   Form,
   Icon,
   Toast,
+  environment,
   getPreferenceValues,
   open,
   openExtensionPreferences,
@@ -78,7 +79,8 @@ const SPOTDL_SETUP_GUIDE_URL = "https://github.com/sth3no/the-downloader/blob/ma
 /** Turn a rejected runner into a red, copyable failure toast. */
 function failToast(toast: Toast, error: unknown) {
   if (error instanceof SpotdlDownloadError) {
-    const partial = error.tracks > 0 ? `Downloaded ${error.tracks} track${error.tracks === 1 ? "" : "s"} before failure. ` : "";
+    const partial =
+      error.tracks > 0 ? `Downloaded ${error.tracks} track${error.tracks === 1 ? "" : "s"} before failure. ` : "";
     toast.style = Toast.Style.Failure;
     toast.title = error.summary.title;
     toast.message = partial + error.summary.message;
@@ -327,6 +329,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             clientId,
             clientSecret,
             userAuth,
+            supportDir: environment.supportPath,
           },
           (p) => {
             toast.message = `${p.tracks} tracks`;

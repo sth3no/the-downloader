@@ -6,6 +6,9 @@
 - **Homebrew path** auto-detects when the configured preference doesn't exist on disk, so an Intel Mac with the Apple-Silicon default no longer fails with "Cannot find Homebrew".
 - **Per-tool installs**: the installer now installs just the missing formula instead of all five Homebrew tools at once — faster, and one tool's install failure no longer blocks the others.
 - **Per-tool upgrades**: the updater now upgrades each Homebrew formula individually, so one formula failure no longer aborts the rest.
+- **spotDL — stale OAuth token invalidation**: when Spotify Client ID/Secret or the user-auth toggle changes, the extension now deletes spotDL's cached token at `~/.spotdl/.spotipy` (and the `~/.config/spotdl/` alternate path) so new credentials are actually used. Fixes spotDL upstream #2606, where credential changes were silently ignored.
+- **spotDL — Rosetta 2 detection on Apple Silicon**: the prebuilt `spotdl-darwin` binary is x86_64-only. The Installer now detects a missing Rosetta runtime after download and surfaces the `softwareupdate --install-rosetta` command; runtime errors like "bad CPU type in executable" are also recognized and translated to the same hint instead of showing a raw shell error.
+- **spotDL — Install via Homebrew**: added a second install action on the spotDL setup screen on macOS that runs `brew install spotdl`. Lets users opt into the Python-based formula (native on Apple Silicon, no Rosetta) instead of the prebuilt binary. Binary resolver picks up either install path automatically.
 
 ## [Feat: Redesigned Download Form] - 2026-05-19
 

@@ -5,6 +5,7 @@ import {
   LaunchProps,
   LaunchType,
   Toast,
+  environment,
   getPreferenceValues,
   launchCommand,
   open,
@@ -159,6 +160,7 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
           clientId,
           clientSecret,
           userAuth: spotifyUserAuth,
+          supportDir: environment.supportPath,
         },
         (p) => {
           toast.message = `${p.tracks} tracks`;
@@ -170,7 +172,8 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
       toast.primaryAction = { title: "Open Folder", onAction: () => open(downloadPath) };
     } catch (error) {
       if (error instanceof SpotdlDownloadError) {
-        const partial = error.tracks > 0 ? `Downloaded ${error.tracks} track${error.tracks === 1 ? "" : "s"} before failure. ` : "";
+        const partial =
+          error.tracks > 0 ? `Downloaded ${error.tracks} track${error.tracks === 1 ? "" : "s"} before failure. ` : "";
         toast.style = Toast.Style.Failure;
         toast.title = error.summary.title;
         toast.message = partial + error.summary.message;

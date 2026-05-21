@@ -47,7 +47,19 @@ describe("resolveBinary on macOS", () => {
     expect(resolveBinary("gallery-dl")).toBe("/opt/homebrew/bin/gallery-dl");
   });
 
-  it("resolves a managed binary inside the managed directory", () => {
+  it("returns the managed-binary path when it exists on disk (managed install takes precedence over system search)", () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/support/spotdl");
+    expect(resolveBinary("spotdl", undefined, "/support")).toBe("/support/spotdl");
+  });
+
+  it("falls back to a system spotdl (e.g. brew-installed) when the managed binary isn't downloaded yet", () => {
+    // Picking up a brew-installed spotdl is what lets users avoid the
+    // Rosetta-requiring prebuilt binary on Apple Silicon.
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/opt/homebrew/bin/spotdl");
+    expect(resolveBinary("spotdl", undefined, "/support")).toBe("/opt/homebrew/bin/spotdl");
+  });
+
+  it("returns the managed path when neither the managed binary nor any system copy exists (lets the Installer surface 'not installed')", () => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
     expect(resolveBinary("spotdl", undefined, "/support")).toBe("/support/spotdl");
   });

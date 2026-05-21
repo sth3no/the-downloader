@@ -60,14 +60,18 @@ export function resolveBinary(name: string, preferencePath?: string, managedDir?
   const platform = process.platform;
   const pref = platform === "win32" ? preferencePath?.replace(/[\r\n]/g, "").trim() : preferencePath;
   if (pref && fs.existsSync(pref)) return pref;
-  if (managedDir) {
-    return path.join(managedDir, platform === "win32" ? `${name}.exe` : name);
-  }
+  const managedPath = managedDir ? path.join(managedDir, platform === "win32" ? `${name}.exe` : name) : undefined;
+  if (managedPath && fs.existsSync(managedPath)) return managedPath;
   if (platform === "darwin") {
     const found = findInDirs(name, macSearchDirs(os.homedir(), process.env));
-    return found || `/opt/homebrew/bin/${name}`;
+    if (found) return found;
+  } else if (platform === "win32") {
+    const found = whichWindows(name);
+    if (found) return found;
   }
-  if (platform === "win32") return whichWindows(name);
+  if (managedPath) return managedPath;
+  if (platform === "darwin") return `/opt/homebrew/bin/${name}`;
+  if (platform === "win32") return "";
   return `/usr/bin/${name}`;
 }
 
