@@ -36,6 +36,16 @@ export type VideoDownloadArgs = {
 };
 
 /**
+ * Sentinel prefix wrapped around the final filepath so it can be picked out of
+ * yt-dlp's mixed stdout deterministically. Without the tag we relied on "first
+ * char is `/`", which matched intermediate post-processor lines like
+ * `[ExtractAudio] Destination: /…` and could overwrite the real after_move
+ * path. The tag is opaque enough that no extractor's own output prints it.
+ */
+const FILEPATH_TAG = "THE-DOWNLOADER-FILEPATH:";
+const FILEPATH_LINE_RE = new RegExp(`^${FILEPATH_TAG}(.+)$`);
+
+/**
  * Build yt-dlp CLI args for a media download. `format` is a `"<download>#<recode>"`
  * pair: when the download half is `bestaudio` the audio is extracted to the recode
  * format, otherwise the video is downloaded and recoded to the recode container.
@@ -51,7 +61,7 @@ export function buildVideoDownloadArgs(a: VideoDownloadArgs): string[] {
   } else {
     args.push("--format", downloadFormat, "--recode-video", recodeFormat);
   }
-  args.push("--progress", "--print", "after_move:filepath", a.url);
+  args.push("--progress", "--print", `after_move:${FILEPATH_TAG}%(filepath)s`, a.url);
   return args;
 }
 
@@ -74,11 +84,11 @@ export async function runVideoDownload(
       const progress = /\[download\]\s+(\d+(?:\.\d+)?)%/.exec(line);
       if (progress) {
         onProgress(Number(progress[1]));
-      } else {
-        const trimmed = line.trim();
-        if (trimmed.startsWith("/") || /^[a-zA-Z]:\\/.test(trimmed)) {
-          filePath = trimmed;
-        }
+        continue;
+      }
+      const tagged = FILEPATH_LINE_RE.exec(line.trim());
+      if (tagged) {
+        filePath = tagged[1].trim();
       }
     }
   };

@@ -30,7 +30,7 @@ describe("buildVideoDownloadArgs", () => {
       "0",
       "--progress",
       "--print",
-      "after_move:filepath",
+      "after_move:THE-DOWNLOADER-FILEPATH:%(filepath)s",
       "https://example.com/v",
     ]);
   });
@@ -58,7 +58,7 @@ describe("buildVideoDownloadArgs", () => {
       "mp4",
       "--progress",
       "--print",
-      "after_move:filepath",
+      "after_move:THE-DOWNLOADER-FILEPATH:%(filepath)s",
       "https://example.com/v",
     ]);
   });
@@ -77,7 +77,7 @@ describe("runVideoDownload", () => {
     ffmpegPath: "/ff",
   };
 
-  it("reports progress and resolves with the downloaded file path", async () => {
+  it("reports progress and resolves with the tagged filepath", async () => {
     const child = fakeChild();
     (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
 
@@ -85,11 +85,29 @@ describe("runVideoDownload", () => {
     const promise = runVideoDownload("/yt-dlp", options, onProgress);
 
     child.stdout.emit("data", Buffer.from("[download]  42.0% of 10.00MiB\n"));
-    child.stdout.emit("data", Buffer.from("/out/My Video.mp4\n"));
+    child.stdout.emit("data", Buffer.from("THE-DOWNLOADER-FILEPATH:/out/My Video.mp4\n"));
     child.emit("close", 0);
 
     await expect(promise).resolves.toEqual({ filePath: "/out/My Video.mp4" });
     expect(onProgress).toHaveBeenCalledWith(42);
+  });
+
+  it("ignores untagged path-like lines (e.g. post-processor [ExtractAudio] Destination) — they no longer overwrite the real after_move filepath", async () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const promise = runVideoDownload("/yt-dlp", options, vi.fn());
+
+    // Real-world yt-dlp sequence: post-processor lines print absolute paths
+    // BEFORE the after_move tag. The old logic kept the last `/`-prefixed
+    // line, so the intermediate path won. With the tag, only the tagged line
+    // counts.
+    child.stdout.emit("data", Buffer.from("[ExtractAudio] Destination: /out/My Video.intermediate.opus\n"));
+    child.stdout.emit("data", Buffer.from("Deleting original file /out/My Video.webm (pass -k to keep)\n"));
+    child.stdout.emit("data", Buffer.from("THE-DOWNLOADER-FILEPATH:/out/My Video.mp3\n"));
+    child.emit("close", 0);
+
+    await expect(promise).resolves.toEqual({ filePath: "/out/My Video.mp3" });
   });
 
   it("rejects with the stderr text on a non-zero exit", async () => {
