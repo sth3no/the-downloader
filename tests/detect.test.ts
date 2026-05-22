@@ -15,6 +15,18 @@ describe("detectSource", () => {
     expect(detectSource("https://www.pixiv.net/en/users/123")).toBe("gallery");
   });
 
+  it("routes Pinterest variants — pin.it short links and regional TLDs — to gallery", () => {
+    expect(detectSource("https://www.pinterest.com/user/board/")).toBe("gallery");
+    expect(detectSource("https://pin.it/2xYzAbc")).toBe("gallery");
+    expect(detectSource("https://pinterest.de/user/")).toBe("gallery");
+    expect(detectSource("https://www.pinterest.co.uk/user/")).toBe("gallery");
+    expect(detectSource("https://in.pinterest.com/user/")).toBe("gallery");
+  });
+
+  it("does not misclassify lookalike hosts as Pinterest", () => {
+    expect(detectSource("https://notpinterest.com/page")).toBe("webpage");
+  });
+
   it("routes Spotify links to spotify", () => {
     expect(detectSource("https://open.spotify.com/track/abc")).toBe("spotify");
     expect(detectSource("https://open.spotify.com/playlist/xyz")).toBe("spotify");

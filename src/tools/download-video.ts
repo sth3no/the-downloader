@@ -13,6 +13,8 @@ import {
 import fs from "node:fs";
 import path from "node:path";
 import { fetchVideoInfo } from "../lib/ytdlp.js";
+import { detectSource } from "../lib/detect.js";
+import { filetypeGuidance } from "../lib/filetype.js";
 
 type Input = {
   /**
@@ -22,6 +24,15 @@ type Input = {
 };
 
 export default async function tool(input: Input) {
+  // This tool only does video (yt-dlp). Pointing it at an image gallery, a
+  // Spotify link, or an arbitrary page would otherwise hand the URL to yt-dlp
+  // and fail with a raw "No video formats found" dump. Bail early with the same
+  // guidance the Download command shows, and route the user to the right tool.
+  const source = detectSource(input.url);
+  if (source !== "video") {
+    throw new Error(`${filetypeGuidance(source)} Use the “Download” command to fetch this URL.`);
+  }
+
   const ytdlPath = getytdlPath();
   const ffmpegPath = getffmpegPath();
   const ffprobePath = getffprobePath();

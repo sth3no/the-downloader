@@ -34,6 +34,50 @@ export function resolveTool(source: SourceType, filetype: Filetype): ToolId {
   return "yt-dlp";
 }
 
+/**
+ * Per-source capability list: the filetypes that make sense for a detected
+ * source. This is the single source of truth the form uses to decide which
+ * Filetype options to even show — so a Pinterest (gallery) link only offers
+ * Image, never Video/Audio/Transcript (which would hand an image URL to yt-dlp
+ * and fail with "No video formats found"). `website` (monolith) is reserved for
+ * unrecognized sites, matching detectSource's webpage fall-through.
+ */
+const SUPPORTED: Record<SourceType, Filetype[]> = {
+  video: ["video", "audio", "image", "transcript"],
+  gallery: ["image"],
+  spotify: ["audio"],
+  webpage: ["website"],
+};
+
+/** The filetypes a detected source supports, in dropdown order. */
+export function supportedFiletypes(source: SourceType): Filetype[] {
+  return SUPPORTED[source] ?? FILETYPES;
+}
+
+/**
+ * Keep `current` when the source supports it; otherwise fall back to the
+ * source's sensible default. Used when the URL changes under a filetype the
+ * user previously picked (e.g. they had Video selected, then pasted Pinterest).
+ */
+export function clampFiletype(source: SourceType, current: Filetype, audioPreferred: boolean): Filetype {
+  return supportedFiletypes(source).includes(current) ? current : defaultFiletype(source, audioPreferred);
+}
+
+/** A short, human note explaining what the detected source supports and why. */
+export function filetypeGuidance(source: SourceType): string {
+  switch (source) {
+    case "gallery":
+      return "Image gallery — only Image is available; gallery-dl downloads every image. Video, audio, and transcript aren't offered for this site.";
+    case "spotify":
+      return "Spotify link — only Audio is available; spotDL fetches the tracks.";
+    case "webpage":
+      return "Not a known media site — it will be saved as a webpage with monolith.";
+    case "video":
+    default:
+      return "Video site — choose Video, Audio, Transcript, or the thumbnail Image.";
+  }
+}
+
 /** Every executable that must exist for a (source, filetype) selection. */
 export function requiredTools(source: SourceType, filetype: Filetype): string[] {
   const tool = resolveTool(source, filetype);
