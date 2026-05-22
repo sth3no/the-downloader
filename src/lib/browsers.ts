@@ -128,11 +128,7 @@ export type ResolvedBrowser = {
  * plus a user-facing label and an optional warning when the selection isn't
  * usable. Callers short-circuit on `warning` with a Failure toast.
  */
-export function resolveBrowser(
-  id: string,
-  customSpec?: string,
-  ctx: ResolveContext = defaultCtx(),
-): ResolvedBrowser {
+export function resolveBrowser(id: string, customSpec?: string, ctx: ResolveContext = defaultCtx()): ResolvedBrowser {
   if (!id) return { spec: "", label: "" };
 
   if (id === "custom") {

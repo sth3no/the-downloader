@@ -139,7 +139,7 @@ export function summarizeSpotdlError(rawOutput: string): SpotdlErrorSummary {
   const lastLine = rawOutput
     .split("\n")
     .map((l) => l.replace(/[|+\-\s]+$/g, "").trim())
-    .filter((l) => l.length > 0 && !/^[|+\-]+$/.test(l))
+    .filter((l) => l.length > 0 && !/^[|+-]+$/.test(l))
     .pop();
   return {
     title: "Download Failed",
