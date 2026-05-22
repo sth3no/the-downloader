@@ -100,23 +100,23 @@ export async function runVideoDownload(
   onProgress: (percent: number) => void,
 ): Promise<VideoDownloadResult> {
   let filePath = "";
-  const handleStdout = (chunk: string) => {
-    for (const line of chunk.split("\n")) {
-      const progress = /\[download\]\s+(\d+(?:\.\d+)?)%/.exec(line);
-      if (progress) {
-        onProgress(Number(progress[1]));
-        continue;
-      }
-      const tagged = FILEPATH_LINE_RE.exec(line.trim());
-      if (tagged) {
-        filePath = tagged[1].trim();
-      }
+  // Line-buffered (via onStdoutLine) so a tagged filepath split across two
+  // stream chunks is still matched whole.
+  const handleLine = (line: string) => {
+    const progress = /\[download\]\s+(\d+(?:\.\d+)?)%/.exec(line);
+    if (progress) {
+      onProgress(Number(progress[1]));
+      return;
+    }
+    const tagged = FILEPATH_LINE_RE.exec(line.trim());
+    if (tagged) {
+      filePath = tagged[1].trim();
     }
   };
   const { code, stderr } = await runWithWatchdog(binaryPath, buildVideoDownloadArgs(options), {
     idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
     env: { ...process.env, PYTHONUNBUFFERED: "1" },
-    onStdoutChunk: handleStdout,
+    onStdoutLine: handleLine,
     abortSignal: options.abortSignal,
   });
   if (code === 0) return { filePath };
@@ -150,16 +150,14 @@ export async function runThumbnailDownload(
   options: ThumbnailDownloadArgs,
 ): Promise<ThumbnailResult> {
   let filePath = "";
-  const handleStdout = (chunk: string) => {
-    for (const line of chunk.split("\n")) {
-      const match = /Writing .*?thumbnail.*? to:\s*(.+)$/.exec(line.trim());
-      if (match) filePath = match[1].trim();
-    }
+  const handleLine = (line: string) => {
+    const match = /Writing .*?thumbnail.*? to:\s*(.+)$/.exec(line.trim());
+    if (match) filePath = match[1].trim();
   };
   const { code, stderr } = await runWithWatchdog(binaryPath, buildThumbnailArgs(options), {
     idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
     env: { ...process.env, PYTHONUNBUFFERED: "1" },
-    onStdoutChunk: handleStdout,
+    onStdoutLine: handleLine,
     abortSignal: options.abortSignal,
   });
   if (code === 0) return { filePath };

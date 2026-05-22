@@ -10,7 +10,7 @@ function fakeChild() {
   const child = new EventEmitter() as any;
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  child.kill = vi.fn();
+  child.kill = vi.fn(() => child.emit("close", null));
   return child;
 }
 

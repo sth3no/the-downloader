@@ -10,7 +10,9 @@ function fakeChild() {
   const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => void };
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  child.kill = vi.fn();
+  // A real process emits 'close' shortly after kill(); mirror that so the
+  // watchdog/abort paths (which now wait for 'close' before settling) resolve.
+  child.kill = vi.fn(() => child.emit("close", null));
   return child;
 }
 
@@ -180,5 +182,83 @@ describe("runWithWatchdog", () => {
 
     // Aborting after the child has cleanly closed must not crash or re-settle the promise.
     expect(() => controller.abort()).not.toThrow();
+  });
+
+  it("does NOT settle on abort until the child actually closes — so callers have evidence the process exited", async () => {
+    const controller = new AbortController();
+    const child = fakeChild();
+    // Override: kill() does NOT emit close synchronously, modeling a child that
+    // takes a moment to exit. The promise must stay pending until close fires.
+    child.kill = vi.fn();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const promise = runWithWatchdog("/bin/x", [], { idleMs: 60_000, abortSignal: controller.signal });
+    let settled = false;
+    void promise.catch(() => {
+      settled = true;
+    });
+
+    controller.abort();
+    await Promise.resolve();
+    expect(child.kill).toHaveBeenCalled();
+    expect(settled).toBe(false); // still terminating — close hasn't fired yet
+
+    child.emit("close", null);
+    await expect(promise).rejects.toBeInstanceOf(AbortError);
+  });
+
+  it("escalates to SIGKILL when the child ignores SIGTERM, guaranteeing close eventually fires", async () => {
+    vi.useFakeTimers();
+    try {
+      const killSignals: (string | undefined)[] = [];
+      const child = fakeChild();
+      child.kill = vi.fn((signal?: string) => {
+        killSignals.push(signal);
+        if (signal === "SIGKILL") child.emit("close", null); // uncatchable — child finally exits
+      }) as unknown as () => void;
+      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+      const controller = new AbortController();
+      const promise = runWithWatchdog("/bin/x", [], { idleMs: 60_000, abortSignal: controller.signal });
+      const assertion = expect(promise).rejects.toBeInstanceOf(AbortError);
+
+      controller.abort(); // SIGTERM — child ignores it
+      await vi.advanceTimersByTimeAsync(5_000); // past the grace period → SIGKILL
+
+      await assertion;
+      expect(killSignals).toEqual([undefined, "SIGKILL"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("buffers stdout into whole lines via onStdoutLine even when a line is split across chunks", async () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const lines: string[] = [];
+    const promise = runWithWatchdog("/bin/x", [], { idleMs: 1_000, onStdoutLine: (l) => lines.push(l) });
+
+    // "TAG:/path/file.mp4" arrives split across two chunks with no newline between.
+    child.stdout.emit("data", Buffer.from("TAG:/path/"));
+    child.stdout.emit("data", Buffer.from("file.mp4\nnext line\n"));
+    child.emit("close", 0);
+
+    await promise;
+    expect(lines).toEqual(["TAG:/path/file.mp4", "next line"]);
+  });
+
+  it("flushes a trailing partial line (no final newline) via onStdoutLine on close", async () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const lines: string[] = [];
+    const promise = runWithWatchdog("/bin/x", [], { idleMs: 1_000, onStdoutLine: (l) => lines.push(l) });
+
+    child.stdout.emit("data", Buffer.from("only line, no newline"));
+    child.emit("close", 0);
+
+    await promise;
+    expect(lines).toEqual(["only line, no newline"]);
   });
 });
