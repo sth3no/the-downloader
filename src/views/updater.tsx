@@ -62,6 +62,18 @@ export default function Updater() {
     })
     .join("\n\n");
 
+  // Check issues keyed to a package-manager itself (brew/winget) — not a single
+  // formula — don't map onto any version row, so render them on their own.
+  // Otherwise a failed `brew info` would leave every row stuck at "Checking..."
+  // with no visible reason.
+  const orphanCheckIssues = checkIssues.filter((i) => !(i.pkg in versions));
+  const checkSection =
+    orphanCheckIssues.length > 0
+      ? `\n\n## Check Issues\n\n${orphanCheckIssues
+          .map((i) => `- **${friendlyNameFor(i.pkg)}**: ${i.message}`)
+          .join("\n")}`
+      : "";
+
   const upgradeSection =
     upgradeIssues.length > 0
       ? `\n\n## Upgrade Issues\n\n${upgradeIssues.map((i) => `- **${friendlyNameFor(i.pkg)}**: ${i.message}`).join("\n")}`
@@ -69,7 +81,11 @@ export default function Updater() {
 
   return (
     <Detail
-      markdown={["## Versions", versionRows, upgradingMessage].filter((x) => Boolean(x)).join("\n\n") + upgradeSection}
+      markdown={
+        ["## Versions", versionRows, upgradingMessage].filter((x) => Boolean(x)).join("\n\n") +
+        checkSection +
+        upgradeSection
+      }
       actions={
         <ActionPanel>
           {allUpToDate ? undefined : (
