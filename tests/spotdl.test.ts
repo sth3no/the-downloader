@@ -335,6 +335,49 @@ describe("runSpotdlDownload", () => {
 
     await expect(promise).rejects.toThrow("Could not find any results for the query");
   });
+
+  it("rejects immediately with AbortError when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      runSpotdlDownload(
+        "/support/spotdl",
+        {
+          url: "https://open.spotify.com/track/x",
+          destination: "/tmp",
+          format: "mp3",
+          ffmpegPath: "/ff",
+          abortSignal: controller.signal,
+        },
+        vi.fn(),
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("kills spotdl and rejects with AbortError when the signal aborts mid-download (user pressed Stop)", async () => {
+    const controller = new AbortController();
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const promise = runSpotdlDownload(
+      "/support/spotdl",
+      {
+        url: "https://open.spotify.com/playlist/x",
+        destination: "/tmp",
+        format: "mp3",
+        ffmpegPath: "/ff",
+        abortSignal: controller.signal,
+      },
+      vi.fn(),
+    );
+    const assertion = expect(promise).rejects.toMatchObject({ name: "AbortError" });
+
+    child.stdout.emit("data", Buffer.from('Downloaded "A - 1"\n'));
+    controller.abort();
+
+    await assertion;
+    expect(child.kill).toHaveBeenCalled();
+  });
 });
 
 describe("summarizeSpotdlError", () => {

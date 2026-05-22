@@ -4,6 +4,7 @@ import { formatDuration, intervalToDuration } from "date-fns";
 import { Format, Video } from "./types.js";
 import { execSync } from "child_process";
 import { findHomebrewPath, resolveBinary, isWindows, isMac } from "./lib/binary.js";
+import { DEFAULT_IDLE_MS } from "./lib/run.js";
 import { isValidUrl } from "./lib/url.js";
 
 export { isWindows, isMac, isValidUrl };
@@ -37,7 +38,7 @@ export const {
  */
 export function getIdleTimeoutMs(): number {
   const parsed = Number(networkIdleTimeoutSec);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 1000) : 120_000;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 1000) : DEFAULT_IDLE_MS;
 }
 
 /**

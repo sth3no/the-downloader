@@ -176,6 +176,15 @@ describe("extractDumpJson", () => {
     expect(extractDumpJson(noisy)).toMatchObject({ title: "Hello" });
   });
 
+  it("parses pretty-printed (multi-line) JSON, including a noise line before it", () => {
+    const pretty = JSON.stringify({ title: "Hello", formats: [{ ext: "mp4" }] }, null, 2);
+    expect(extractDumpJson(`[debug] header\n${pretty}`)).toMatchObject({ title: "Hello" });
+  });
+
+  it("parses JSON whose opening brace is indented (leading whitespace on the first JSON line)", () => {
+    expect(extractDumpJson(`   ${json}`)).toMatchObject({ title: "Hello" });
+  });
+
   it("throws a clear error when stdout contains no JSON object", () => {
     expect(() => extractDumpJson("[error] Sign in to confirm you're not a bot")).toThrow(/no JSON metadata/);
   });
