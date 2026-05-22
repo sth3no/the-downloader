@@ -41,9 +41,6 @@ winget install --id=${wingetId} -e
 \`\`\`
 `;
 
-const managedInstallGuide = (executable: string) =>
-  executable === "spotdl" ? spotdlInstallGuide : genericManagedInstallGuide(executable);
-
 const genericManagedInstallGuide = (executable: string) => `
 # 🚨 Error: \`${executable}\` is not installed
 
@@ -220,7 +217,7 @@ function ManagedInstall({
         />
       )}
       {!isLoading && isMac && executable === "spotdl" && (
-        <Action title="Install via Homebrew" icon={Icon.Download} onAction={installViaBrew} />
+        <Action title="Install Via Homebrew" icon={Icon.Download} onAction={installViaBrew} />
       )}
       {!isLoading && executable === "spotdl" && setupGuideAction}
     </ActionPanel>
