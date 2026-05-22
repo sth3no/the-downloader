@@ -10,10 +10,21 @@ const GALLERY_DOMAINS = [
   "danbooru.donmai.us",
   "gelbooru.com",
   "artstation.com",
-  "pinterest.com",
   "tumblr.com",
   "instagram.com",
 ];
+
+/**
+ * Pinterest needs its own check: it serves the same boards from regional TLDs
+ * (pinterest.de, pinterest.co.uk, …) and from `pin.it` short links, none of
+ * which a fixed "pinterest.com" entry would match. Match `pin.it` exactly, or
+ * any host with a `pinterest` domain label (covers regional TLDs and country
+ * subdomains like in.pinterest.com) — while leaving lookalikes such as
+ * "notpinterest.com" alone.
+ */
+function isPinterest(host: string): boolean {
+  return host === "pin.it" || host.split(".").includes("pinterest");
+}
 
 const SPOTIFY_DOMAINS = ["open.spotify.com"];
 
@@ -55,6 +66,7 @@ function matches(host: string, domains: string[]): boolean {
 export function detectSource(url: string): SourceType {
   const host = hostnameOf(url);
   if (matches(host, SPOTIFY_DOMAINS)) return "spotify";
+  if (isPinterest(host)) return "gallery";
   if (matches(host, GALLERY_DOMAINS)) return "gallery";
   if (matches(host, VIDEO_DOMAINS)) return "video";
   return "webpage";

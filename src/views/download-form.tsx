@@ -18,7 +18,15 @@ import {
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
 import { detectSource } from "../lib/detect.js";
-import { Filetype, FILETYPES, defaultFiletype, requiredTools, resolveTool } from "../lib/filetype.js";
+import {
+  Filetype,
+  clampFiletype,
+  defaultFiletype,
+  filetypeGuidance,
+  requiredTools,
+  resolveTool,
+  supportedFiletypes,
+} from "../lib/filetype.js";
 import { composeVideoFormat } from "../lib/video-format.js";
 import { fetchVideoInfo, runThumbnailDownload, runVideoDownload } from "../lib/ytdlp.js";
 import { isLoginRequiredError, runGalleryDownload } from "../lib/gallerydl.js";
@@ -161,11 +169,16 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
   const source = useMemo(() => detectSource(url), [url]);
   const ytdlpBound = resolveTool(source, filetype) === "yt-dlp";
 
-  // Re-detect the default Filetype as the URL changes — until the user overrides it.
+  // Keep Filetype valid for the URL: snap to the source default until the user
+  // overrides it, and — even after they override — clamp to a supported type
+  // when the detected source can't do the current pick (e.g. Video was selected,
+  // then a Pinterest link is pasted, which only supports Image).
   useEffect(() => {
-    if (!filetypeTouched && validUrl) {
-      setFiletype(defaultFiletype(detectSource(url), audioPreferred));
-    }
+    if (!validUrl) return;
+    const src = detectSource(url);
+    setFiletype((current) =>
+      filetypeTouched ? clampFiletype(src, current, audioPreferred) : defaultFiletype(src, audioPreferred),
+    );
   }, [url, filetypeTouched, validUrl, audioPreferred]);
 
   // The required tools must all exist; otherwise the form is replaced by the Installer.
@@ -209,12 +222,9 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       statusText = "Fetching details…";
     } else if (ytdlpBound) {
       statusText = "Ready to download.";
-    } else if (source === "gallery") {
-      statusText = "Image gallery — gallery-dl will fetch every image.";
-    } else if (source === "spotify") {
-      statusText = "Spotify link — spotDL will fetch the audio.";
     } else {
-      statusText = "Not a known media site — it will be saved as a webpage. Change Filetype to force another tool.";
+      // gallery / spotify / webpage — explain what this source supports and why.
+      statusText = filetypeGuidance(source);
     }
   }
 
@@ -546,12 +556,13 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             id="filetype"
             title="Filetype"
             value={filetype}
+            info={filetypeGuidance(source)}
             onChange={(next) => {
               setFiletype(next as Filetype);
               setFiletypeTouched(true);
             }}
           >
-            {FILETYPES.map((ft) => (
+            {supportedFiletypes(source).map((ft) => (
               <Form.Dropdown.Item key={ft} value={ft} title={FILETYPE_TITLE[ft]} icon={FILETYPE_ICON[ft]} />
             ))}
           </Form.Dropdown>

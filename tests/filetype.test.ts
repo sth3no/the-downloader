@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { defaultFiletype, requiredTools, resolveTool } from "../src/lib/filetype";
+import {
+  clampFiletype,
+  defaultFiletype,
+  filetypeGuidance,
+  requiredTools,
+  resolveTool,
+  supportedFiletypes,
+} from "../src/lib/filetype";
 
 describe("defaultFiletype", () => {
   it("maps a gallery source to image", () => {
@@ -64,5 +71,60 @@ describe("requiredTools", () => {
   });
   it("website needs monolith", () => {
     expect(requiredTools("webpage", "website")).toEqual(["monolith"]);
+  });
+});
+
+describe("supportedFiletypes", () => {
+  it("a gallery source supports only image", () => {
+    expect(supportedFiletypes("gallery")).toEqual(["image"]);
+  });
+  it("a spotify source supports only audio", () => {
+    expect(supportedFiletypes("spotify")).toEqual(["audio"]);
+  });
+  it("a webpage source supports only website", () => {
+    expect(supportedFiletypes("webpage")).toEqual(["website"]);
+  });
+  it("a video source supports video, audio, image (thumbnail) and transcript, but not website", () => {
+    expect(supportedFiletypes("video")).toEqual(["video", "audio", "image", "transcript"]);
+  });
+  it("the preselected default is always within the supported set", () => {
+    for (const source of ["video", "gallery", "spotify", "webpage"] as const) {
+      expect(supportedFiletypes(source)).toContain(defaultFiletype(source, false));
+      expect(supportedFiletypes(source)).toContain(defaultFiletype(source, true));
+    }
+  });
+  it("every supported (source, filetype) pair resolves to a real tool", () => {
+    for (const source of ["video", "gallery", "spotify", "webpage"] as const) {
+      for (const ft of supportedFiletypes(source)) {
+        expect(requiredTools(source, ft).length).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
+describe("clampFiletype", () => {
+  it("keeps a supported filetype unchanged", () => {
+    expect(clampFiletype("video", "audio", false)).toBe("audio");
+    expect(clampFiletype("gallery", "image", false)).toBe("image");
+  });
+  it("snaps an unsupported filetype to the source default (gallery + video → image)", () => {
+    expect(clampFiletype("gallery", "video", false)).toBe("image");
+    expect(clampFiletype("gallery", "transcript", false)).toBe("image");
+  });
+  it("honours audioPreferred when snapping on a video source", () => {
+    // website is never supported on a video source, so it must snap to the default
+    expect(clampFiletype("video", "website", true)).toBe("audio");
+    expect(clampFiletype("video", "website", false)).toBe("video");
+  });
+});
+
+describe("filetypeGuidance", () => {
+  it("returns a non-empty hint for every source", () => {
+    for (const source of ["video", "gallery", "spotify", "webpage"] as const) {
+      expect(filetypeGuidance(source).length).toBeGreaterThan(0);
+    }
+  });
+  it("explains the gallery restriction (mentions image or gallery)", () => {
+    expect(filetypeGuidance("gallery").toLowerCase()).toMatch(/image|gallery/);
   });
 });
