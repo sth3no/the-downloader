@@ -1,9 +1,28 @@
 import { execa } from "execa";
 import fs from "node:fs";
+import os from "node:os";
 import path from "path";
+import crypto from "node:crypto";
+import { environment } from "@raycast/api";
 import { Video } from "./types.js";
-import { downloadPath, forceIpv4, getffmpegPath, getytdlPath, sanitizeVideoTitle } from "./utils.js";
+import { forceIpv4, getffmpegPath, getytdlPath, sanitizeVideoTitle } from "./utils.js";
 import SRTParser from "srt-parser-2";
+
+/**
+ * Pick a scratch directory for the subtitle download. Prefer Raycast's support
+ * path (writable on every install, survives the session) and fall back to the
+ * OS temp dir if support is unavailable (e.g. invoked outside a Raycast
+ * environment in tests). NOT the user's downloadPath — that may be read-only,
+ * a slow network mount, or shared across concurrent transcript extractions.
+ */
+function transcriptScratchRoot(): string {
+  try {
+    if (environment.supportPath) return environment.supportPath;
+  } catch {
+    /* `environment` isn't bound (e.g. in tests) — fall through */
+  }
+  return os.tmpdir();
+}
 
 export default async function extractTranscript(url: string, language: string = "en") {
   const ytdlPath = getytdlPath();
@@ -27,11 +46,12 @@ export default async function extractTranscript(url: string, language: string = 
     throw new Error("Live streams are not supported");
   }
 
-  // Create a temporary directory for subtitle download
-  const tmpDir = path.join(downloadPath, ".tmp-subtitles");
-  if (!fs.existsSync(tmpDir)) {
-    fs.mkdirSync(tmpDir, { recursive: true });
-  }
+  // Per-call scratch directory under the support path. A fresh subdir per
+  // invocation avoids two concurrent transcript extractions (e.g. from the
+  // Download form and the extract-transcript tool at the same time) clobbering
+  // each other's files and rm-ing the directory under each other's feet.
+  const tmpDir = path.join(transcriptScratchRoot(), `transcript-${crypto.randomUUID()}`);
+  fs.mkdirSync(tmpDir, { recursive: true });
 
   try {
     // Download subtitles using yt-dlp
@@ -68,17 +88,13 @@ export default async function extractTranscript(url: string, language: string = 
     // Convert SRT to markdown
     const transcript = cleanUpSrt(subtitleContent);
 
-    // Clean up
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-
     return {
       transcript,
       title: sanitizeVideoTitle(video.title),
     };
-  } catch (error) {
-    // Clean up on error
+  } finally {
+    // Always clean up — success or error — so a partial scratch never leaks.
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    throw error;
   }
 }
 

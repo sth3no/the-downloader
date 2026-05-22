@@ -1,5 +1,6 @@
-import { spawn } from "node:child_process";
 import path from "node:path";
+import { DEFAULT_IDLE_MS, runWithWatchdog } from "./run.js";
+import { invalidateSpotipyCacheIfStale } from "./spotdl-cache.js";
 
 export type SpotdlDownloadOptions = {
   url: string;
@@ -17,6 +18,17 @@ export type SpotdlDownloadOptions = {
    * child if the callback never arrives.
    */
   userAuth?: boolean;
+  /**
+   * Raycast support directory. Used to persist the credentials fingerprint so
+   * spotDL's cached OAuth token can be invalidated when credentials change
+   * (upstream #2606). When omitted, the cache is left alone — callers that
+   * never change credentials between runs don't need this.
+   */
+  supportDir?: string;
+  /** Idle-watchdog window in ms. Defaults to DEFAULT_IDLE_MS if omitted. */
+  idleMs?: number;
+  /** Aborting cancels the download mid-flight. */
+  abortSignal?: AbortSignal;
 };
 
 /** Matches both `https://open.spotify.com[/<locale>]/playlist/...` URLs and `spotify:playlist:...` URIs. */
@@ -35,9 +47,7 @@ const PLAYLIST_URL = /(?:\/|:)playlist(?:\/|:)/i;
  */
 export function buildSpotdlArgs(o: SpotdlDownloadOptions): string[] {
   const isPlaylist = PLAYLIST_URL.test(o.url);
-  const template = isPlaylist
-    ? "{list-name}/{artists} - {title}.{output-ext}"
-    : "{artists} - {title}.{output-ext}";
+  const template = isPlaylist ? "{list-name}/{artists} - {title}.{output-ext}" : "{artists} - {title}.{output-ext}";
   const args = [
     "download",
     o.url,
@@ -104,6 +114,13 @@ export function summarizeSpotdlError(rawOutput: string): SpotdlErrorSummary {
       action: "open-preferences",
     };
   }
+  if (/Bad CPU type in executable|ENOEXEC|cannot execute binary file/i.test(rawOutput)) {
+    return {
+      title: "spotDL needs Rosetta 2",
+      message:
+        "The spotDL prebuilt binary is x86_64-only. Open Terminal and run: softwareupdate --install-rosetta --agree-to-license — then retry the download.",
+    };
+  }
   if (/redirect_uri.*Not\s*matching/i.test(rawOutput)) {
     return {
       title: "Spotify redirect URI mismatch",
@@ -152,87 +169,50 @@ export class SpotdlDownloadError extends Error {
 }
 
 /**
- * Kill spotdl after this long with no stdout/stderr output. Real downloads emit
- * progress lines well within this window even on slow networks. A silent gap
- * past it means spotdl is wedged (e.g. waiting on an OAuth callback that won't
- * arrive under Raycast) — better to surface a clear error than leave zombies.
- */
-const SPOTDL_IDLE_TIMEOUT_MS = 120_000;
-
-/**
  * Run spotDL; onProgress fires as tracks complete. Resolves with the track count
  * or rejects with the failure output. spotDL is Python+Rich-based and routinely
  * prints tracebacks/errors to stdout rather than stderr, so stdout is captured
- * and used as the error message when stderr is empty. stdin is closed so spotdl
- * can never fall back to interactive prompts (which would hang forever), and a
- * watchdog kills the child if no output arrives within the idle window.
+ * and used as the error message when stderr is empty.
+ *
+ * Built on the shared `runWithWatchdog`, which closes stdin (so spotdl can never
+ * fall back to an interactive prompt that would hang forever), runs the idle
+ * watchdog, and — crucially — waits for the child's real `close` before settling
+ * on abort/timeout. spotDL-specific concerns stay here: credential-cache
+ * invalidation before launch, per-track progress, and the SpotdlDownloadError
+ * shape on a non-zero exit.
  */
-export function runSpotdlDownload(
+export async function runSpotdlDownload(
   binaryPath: string,
   options: SpotdlDownloadOptions,
   onProgress: (p: SpotdlProgress) => void,
 ): Promise<SpotdlProgress> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(binaryPath, buildSpotdlArgs(options), {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let tracks = 0;
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    let idleTimer: ReturnType<typeof setTimeout> | undefined;
-
-    const settle = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      if (idleTimer) clearTimeout(idleTimer);
-      fn();
-    };
-
-    const resetIdle = () => {
-      if (settled) return;
-      if (idleTimer) clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => {
-        settle(() => {
-          try {
-            child.kill();
-          } catch {
-            /* child may already be dead */
-          }
-          reject(
-            new Error(
-              `spotdl produced no output for 2 minutes and was killed. This usually means it is stuck on an auth or network step; check SPOTIFY.md or retry.`,
-            ),
-          );
-        });
-      }, SPOTDL_IDLE_TIMEOUT_MS);
-    };
-    resetIdle();
-
-    child.stdout.on("data", (data: Buffer) => {
-      resetIdle();
-      const text = data.toString();
-      stdout += text;
-      // spotDL prints one "Downloaded ..." line per completed track.
-      const completed = text.split("\n").filter((line) => line.includes("Downloaded")).length;
-      if (completed > 0) {
-        tracks += completed;
-        onProgress({ tracks });
-      }
-    });
-    child.stderr.on("data", (data: Buffer) => {
-      resetIdle();
-      stderr += data.toString();
-    });
-    child.on("error", (err) => settle(() => reject(err)));
-    child.on("close", (code) => {
-      settle(() => {
-        if (code === 0) resolve({ tracks });
-        else {
-          const rawOutput = stderr.trim() || stdout.trim() || `spotdl exited with code ${code}`;
-          reject(new SpotdlDownloadError(tracks, rawOutput));
-        }
-      });
-    });
+  if (options.supportDir) {
+    invalidateSpotipyCacheIfStale(
+      options.supportDir,
+      options.clientId,
+      options.clientSecret,
+      Boolean(options.userAuth),
+    );
+  }
+  const idleMs = options.idleMs ?? DEFAULT_IDLE_MS;
+  let tracks = 0;
+  const handleStdout = (chunk: string) => {
+    // spotDL prints one "Downloaded ..." line per completed track.
+    const completed = chunk.split("\n").filter((line) => line.includes("Downloaded")).length;
+    if (completed > 0) {
+      tracks += completed;
+      onProgress({ tracks });
+    }
+  };
+  const { code, stdout, stderr } = await runWithWatchdog(binaryPath, buildSpotdlArgs(options), {
+    idleMs,
+    onStdoutChunk: handleStdout,
+    abortSignal: options.abortSignal,
+    idleKillMessage: `spotdl produced no output for ${Math.round(
+      idleMs / 1000,
+    )}s and was killed. This usually means it is stuck on an auth or network step; check SPOTIFY.md or retry.`,
   });
+  if (code === 0) return { tracks };
+  const rawOutput = stderr.trim() || stdout.trim() || `spotdl exited with code ${code}`;
+  throw new SpotdlDownloadError(tracks, rawOutput);
 }

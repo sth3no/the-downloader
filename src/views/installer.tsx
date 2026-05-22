@@ -12,9 +12,9 @@ import {
   showToast,
 } from "@raycast/api";
 import { ExecaError, execa } from "execa";
-import { getWingetPath, homebrewPath, isMac, isWindows } from "../utils.js";
-import { HOMEBREW_FORMULAE, isManagedTool, wingetIdFor } from "../lib/tools.js";
-import { downloadSpotdl } from "../lib/managed-binary.js";
+import { getHomebrewPath, getWingetPath, isMac, isWindows } from "../utils.js";
+import { homebrewFormulaFor, isManagedTool, wingetIdFor } from "../lib/tools.js";
+import { downloadSpotdl, isAppleSilicon, isRosettaInstalled } from "../lib/managed-binary.js";
 
 const macOSInstallGuide = (executable: string) => `
 # 🚨 Error: \`${executable}\` is not installed
@@ -54,14 +54,18 @@ Press **⏎** to download it now. **Please do not close Raycast while the downlo
 
 const SPOTDL_SETUP_GUIDE_URL = "https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md";
 
-const spotdlInstallGuide = (installed: boolean) => `
+const spotdlInstallGuide = (installed: boolean) => {
+  const installBlock = installed
+    ? "Set up your Spotify credentials below (about one minute), then press **⏎** to continue."
+    : `This extension can download spotDL for you — a one-time, self-contained binary (~40 MB). No Python required.\n\nPress **⏎** to install. **Please do not close Raycast while the download is in progress.**${
+        isMac
+          ? `\n\n_Apple Silicon: the prebuilt binary is Intel-only and runs under Rosetta 2. If you prefer a native install, use the **Install via Homebrew** action — it installs the \`spotdl\` formula (Python-based, no Rosetta needed)._`
+          : ""
+      }`;
+  return `
 # ${installed ? "✅ spotDL installed" : "🚨 spotDL is not installed"}
 
-${
-  installed
-    ? "Set up your Spotify credentials below (about one minute), then press **⏎** to continue."
-    : "This extension can download spotDL for you — a one-time, self-contained binary (~40 MB). No Python required.\n\nPress **⏎** to install. **Please do not close Raycast while the download is in progress.**"
-}
+${installBlock}
 
 ---
 
@@ -79,6 +83,7 @@ Once entered, your credentials persist — you only do this once.
 
 Something not working? Open the [setup guide & troubleshooting](${SPOTDL_SETUP_GUIDE_URL}).
 `;
+};
 
 export default function Installer({ executable, onRefresh }: { executable: string; onRefresh: () => void }) {
   const [installed, setInstalled] = useState(false);
@@ -119,26 +124,56 @@ function ManagedInstall({
   const [isLoading, setIsLoading] = useState(false);
 
   const setupGuideAction = (
-    <Action
-      title="Open Setup Guide"
-      icon={Icon.QuestionMarkCircle}
-      onAction={() => open(SPOTDL_SETUP_GUIDE_URL)}
-    />
+    <Action title="Open Setup Guide" icon={Icon.QuestionMarkCircle} onAction={() => open(SPOTDL_SETUP_GUIDE_URL)} />
   );
 
   if (installed) {
     return (
       <ActionPanel>
         <Action title="Continue" icon={Icon.ArrowRight} onAction={onContinue} />
-        <Action
-          title="Open Extension Preferences"
-          icon={Icon.Cog}
-          onAction={openExtensionPreferences}
-        />
+        <Action title="Open Extension Preferences" icon={Icon.Cog} onAction={openExtensionPreferences} />
         {executable === "spotdl" && setupGuideAction}
       </ActionPanel>
     );
   }
+
+  const installViaBrew = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    const installationToast = new Toast({ style: Toast.Style.Animated, title: "Installing spotdl via Homebrew..." });
+    await installationToast.show();
+    try {
+      await execa(getHomebrewPath(), ["install", "spotdl"]);
+      await installationToast.hide();
+      setIsLoading(false);
+      if (executable === "spotdl") {
+        onInstalled();
+      } else {
+        onContinue();
+      }
+    } catch (error) {
+      await installationToast.hide();
+      console.error(error);
+      const isExecaError = error instanceof ExecaError;
+      const isENOENT = isExecaError && error.code === "ENOENT";
+      const message = error instanceof Error ? error.message : "An unknown error occurred";
+      await showToast({
+        style: Toast.Style.Failure,
+        title: isENOENT ? "Cannot find Homebrew" : "Homebrew Install Failed",
+        message: isENOENT
+          ? "Please make sure your `brew` PATH is configured correctly in extension preferences. If you don't have Homebrew installed, you can download it from https://brew.sh."
+          : message,
+        primaryAction: {
+          title: isENOENT ? "Open Extension Preferences" : "Copy to Clipboard",
+          onAction: () => {
+            if (isENOENT) openExtensionPreferences();
+            else Clipboard.copy(message);
+          },
+        },
+      });
+      setIsLoading(false);
+    }
+  };
 
   return (
     <ActionPanel>
@@ -166,10 +201,11 @@ function ManagedInstall({
             } catch (error) {
               await installationToast.hide();
               console.error(error);
+              const needsRosetta = isAppleSilicon() && !isRosettaInstalled();
               const message = error instanceof Error ? error.message : "An unknown error occurred";
               await showToast({
                 style: Toast.Style.Failure,
-                title: "Download Failed",
+                title: needsRosetta ? "spotDL needs Rosetta 2" : "Download Failed",
                 message,
                 primaryAction: {
                   title: "Copy to Clipboard",
@@ -182,6 +218,9 @@ function ManagedInstall({
             setIsLoading(false);
           }}
         />
+      )}
+      {!isLoading && isMac && executable === "spotdl" && (
+        <Action title="Install via Homebrew" icon={Icon.Download} onAction={installViaBrew} />
       )}
       {!isLoading && executable === "spotdl" && setupGuideAction}
     </ActionPanel>
@@ -205,7 +244,7 @@ function AutoInstall({ executable, onRefresh }: { executable: string; onRefresh:
             await installationToast.show();
 
             try {
-              await execa(homebrewPath, ["install", ...HOMEBREW_FORMULAE]);
+              await execa(getHomebrewPath(), ["install", homebrewFormulaFor(executable)]);
               await installationToast.hide();
               onRefresh();
             } catch (error) {

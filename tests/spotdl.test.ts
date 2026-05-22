@@ -3,14 +3,19 @@ import { EventEmitter } from "node:events";
 
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
+vi.mock("../src/lib/spotdl-cache.js", () => ({
+  invalidateSpotipyCacheIfStale: vi.fn(),
+}));
+
 import { spawn } from "node:child_process";
+import { invalidateSpotipyCacheIfStale } from "../src/lib/spotdl-cache.js";
 import { buildSpotdlArgs, runSpotdlDownload, summarizeSpotdlError, SpotdlDownloadError } from "../src/lib/spotdl";
 
 function fakeChild() {
   const child = new EventEmitter() as any;
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  child.kill = vi.fn();
+  child.kill = vi.fn(() => child.emit("close", null));
   return child;
 }
 
@@ -269,6 +274,49 @@ describe("runSpotdlDownload", () => {
     }
   });
 
+  it("invalidates the spotipy cache before spawn when supportDir + credentials are provided", async () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+    vi.mocked(invalidateSpotipyCacheIfStale).mockClear();
+
+    const promise = runSpotdlDownload(
+      "/support/spotdl",
+      {
+        url: "https://open.spotify.com/track/x",
+        destination: "/tmp",
+        format: "mp3",
+        ffmpegPath: "/ff",
+        clientId: "id",
+        clientSecret: "secret",
+        userAuth: true,
+        supportDir: "/support",
+      },
+      vi.fn(),
+    );
+
+    expect(invalidateSpotipyCacheIfStale).toHaveBeenCalledWith("/support", "id", "secret", true);
+
+    child.emit("close", 0);
+    await promise;
+  });
+
+  it("does NOT touch the spotipy cache when supportDir is omitted", async () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+    vi.mocked(invalidateSpotipyCacheIfStale).mockClear();
+
+    const promise = runSpotdlDownload(
+      "/support/spotdl",
+      { url: "https://open.spotify.com/track/x", destination: "/tmp", format: "mp3", ffmpegPath: "/ff" },
+      vi.fn(),
+    );
+
+    expect(invalidateSpotipyCacheIfStale).not.toHaveBeenCalled();
+
+    child.emit("close", 0);
+    await promise;
+  });
+
   it("falls back to stdout when stderr is empty on a non-zero exit", async () => {
     // spotDL is Python+Rich-based and routinely prints tracebacks/errors to
     // stdout, not stderr. Without this fallback the user just sees the bare
@@ -286,6 +334,49 @@ describe("runSpotdlDownload", () => {
     child.emit("close", 1);
 
     await expect(promise).rejects.toThrow("Could not find any results for the query");
+  });
+
+  it("rejects immediately with AbortError when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      runSpotdlDownload(
+        "/support/spotdl",
+        {
+          url: "https://open.spotify.com/track/x",
+          destination: "/tmp",
+          format: "mp3",
+          ffmpegPath: "/ff",
+          abortSignal: controller.signal,
+        },
+        vi.fn(),
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("kills spotdl and rejects with AbortError when the signal aborts mid-download (user pressed Stop)", async () => {
+    const controller = new AbortController();
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const promise = runSpotdlDownload(
+      "/support/spotdl",
+      {
+        url: "https://open.spotify.com/playlist/x",
+        destination: "/tmp",
+        format: "mp3",
+        ffmpegPath: "/ff",
+        abortSignal: controller.signal,
+      },
+      vi.fn(),
+    );
+    const assertion = expect(promise).rejects.toMatchObject({ name: "AbortError" });
+
+    child.stdout.emit("data", Buffer.from('Downloaded "A - 1"\n'));
+    controller.abort();
+
+    await assertion;
+    expect(child.kill).toHaveBeenCalled();
   });
 });
 
@@ -305,9 +396,7 @@ describe("summarizeSpotdlError", () => {
   });
 
   it("maps 'Could not get session auth tokens' to a missing-credentials hint", () => {
-    const s = summarizeSpotdlError(
-      "BaseClientError: Could not get session auth tokens",
-    );
+    const s = summarizeSpotdlError("BaseClientError: Could not get session auth tokens");
     expect(s.message.toLowerCase()).toMatch(/client id|client secret|credentials/);
     expect(s.action).toBe("open-preferences");
   });
@@ -316,6 +405,21 @@ describe("summarizeSpotdlError", () => {
     const s = summarizeSpotdlError("INVALID_CLIENT: redirect_uri: Not matching configuration");
     expect(s.message.toLowerCase()).toMatch(/redirect uri|127\.0\.0\.1:9900/);
     expect(s.action).toBe("open-setup-guide");
+  });
+
+  it("maps 'Bad CPU type in executable' to a Rosetta install hint", () => {
+    // The x86_64-only spotDL prebuilt binary triggers this on Apple Silicon
+    // without Rosetta — surface the actual fix, not just the raw shell error.
+    const s = summarizeSpotdlError("zsh: bad CPU type in executable: /Users/x/.../spotdl");
+    expect(s.title.toLowerCase()).toContain("rosetta");
+    expect(s.message.toLowerCase()).toMatch(/softwareupdate.*--install-rosetta/);
+  });
+
+  it("maps ENOEXEC / 'cannot execute binary file' to the same Rosetta hint", () => {
+    for (const raw of ["spawn ENOEXEC", "bash: ./spotdl: cannot execute binary file: Exec format error"]) {
+      const s = summarizeSpotdlError(raw);
+      expect(s.title.toLowerCase()).toContain("rosetta");
+    }
   });
 
   it("maps Python KeyError/AttributeError/TypeError tracebacks to a 'spotDL upstream bug' summary", () => {

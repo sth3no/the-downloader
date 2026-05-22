@@ -1,11 +1,13 @@
+import * as fs from "node:fs";
 import { getPreferenceValues, environment } from "@raycast/api";
 import { formatDuration, intervalToDuration } from "date-fns";
-import validator from "validator";
 import { Format, Video } from "./types.js";
 import { execSync } from "child_process";
-import { resolveBinary, isWindows, isMac } from "./lib/binary.js";
+import { findHomebrewPath, resolveBinary, isWindows, isMac } from "./lib/binary.js";
+import { DEFAULT_IDLE_MS } from "./lib/run.js";
+import { isValidUrl } from "./lib/url.js";
 
-export { isWindows, isMac };
+export { isWindows, isMac, isValidUrl };
 
 function sanitizeWindowsPath(path: string): string {
   return path.replace(/\r/g, "").replace(/\n/g, "").trim();
@@ -13,11 +15,12 @@ function sanitizeWindowsPath(path: string): string {
 
 export const {
   downloadPath,
-  homebrewPath,
+  homebrewPath: homebrewPathPreference,
   autoLoadUrlFromClipboard,
   autoLoadUrlFromSelectedText,
   enableBrowserExtensionSupport,
   forceIpv4,
+  networkIdleTimeoutSec,
   ytdlPath: ytdlPathPreference,
   ffmpegPath: ffmpegPathPreference,
   ffprobePath: ffprobePathPreference,
@@ -26,6 +29,30 @@ export const {
   denoPath: denoPathPreference,
   monolithPath: monolithPathPreference,
 } = getPreferenceValues<ExtensionPreferences>();
+
+/**
+ * Resolve the watchdog idle window for child-process spawns. Reads
+ * `networkIdleTimeoutSec` from preferences and falls back to 120 seconds when
+ * the value is missing, non-numeric, or non-positive — defensive because the
+ * preference is a free-form text field.
+ */
+export function getIdleTimeoutMs(): number {
+  const parsed = Number(networkIdleTimeoutSec);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 1000) : DEFAULT_IDLE_MS;
+}
+
+/**
+ * Resolve the Homebrew CLI. Honors the user's preference when it exists on
+ * disk (covers custom installs and multi-user setups); otherwise falls back
+ * to auto-detection so an Intel Mac with the Apple-Silicon default still
+ * works without the user fixing the preference.
+ */
+export function getHomebrewPath(): string {
+  if (homebrewPathPreference && fs.existsSync(homebrewPathPreference)) {
+    return homebrewPathPreference;
+  }
+  return findHomebrewPath();
+}
 
 export async function getWingetPath() {
   try {
@@ -78,10 +105,6 @@ export function isValidHHMM(input: string) {
   } catch {
     return false;
   }
-}
-
-export function isValidUrl(url: string) {
-  return validator.isURL(url, { require_protocol: false });
 }
 
 export function formatTbr(tbr: number | null) {

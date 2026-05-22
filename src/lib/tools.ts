@@ -50,3 +50,9 @@ export function wingetIdFor(executable: string): string {
 export function friendlyNameFor(name: string): string {
   return Object.values(TOOLS).find((tool) => tool.wingetId === name)?.id ?? name;
 }
+
+/** The Homebrew formula name for an executable. ffprobe ships inside the ffmpeg formula, so it maps there. Returns the input unchanged if no tool entry matches. */
+export function homebrewFormulaFor(executable: string): string {
+  if (executable === "ffprobe") return "ffmpeg";
+  return (TOOLS as Record<string, ToolSpec | undefined>)[executable]?.id ?? executable;
+}

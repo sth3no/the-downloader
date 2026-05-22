@@ -98,3 +98,7 @@ Note: spotDL often downloads a handful of tracks before the 403 surfaces — the
 **Download hangs forever ("Downloading from Spotify… 0 tracks" indefinitely)** — shouldn't happen as of the watchdog, but if it does the extension auto-kills the process after 2 minutes of silence and shows a clear failure. If you keep seeing it, share the toast text on the repo.
 
 **Credentials look right but downloads still fail "credentials missing"** — the Download form was open before you saved the preferences. Close it (`Esc` or back arrow) and re-open the Download command so it picks up the fresh values.
+
+**Changed Client ID/Secret and Spotify still rejects auth** — the extension automatically deletes spotDL's cached OAuth token (at `~/.spotdl/.spotipy`) whenever the credential set changes, so the new credentials are used on the next run. If you have a download in flight when you change credentials, finish or cancel it first and then retry — the invalidation happens at download start.
+
+**macOS only — `spotDL needs Rosetta 2` toast or `bad CPU type in executable`** — the spotDL prebuilt binary is Intel-only (no native arm64 build upstream as of v4.5.0), and Apple Silicon Macs need Rosetta 2 to run it. Open Terminal and run `softwareupdate --install-rosetta --agree-to-license`, then retry. As an alternative, use the **Install via Homebrew** action on the spotDL install screen — `brew install spotdl` uses Python and runs natively on Apple Silicon without Rosetta.

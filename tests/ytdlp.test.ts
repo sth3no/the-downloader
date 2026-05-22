@@ -4,12 +4,13 @@ import { EventEmitter } from "node:events";
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
 import { spawn } from "node:child_process";
-import { buildThumbnailArgs, buildVideoDownloadArgs, runVideoDownload } from "../src/lib/ytdlp";
+import { buildThumbnailArgs, buildVideoDownloadArgs, extractDumpJson, runVideoDownload } from "../src/lib/ytdlp";
 
 function fakeChild() {
-  const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter };
+  const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => void };
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
+  child.kill = vi.fn(() => child.emit("close", null));
   return child;
 }
 
@@ -29,7 +30,7 @@ describe("buildVideoDownloadArgs", () => {
       "0",
       "--progress",
       "--print",
-      "after_move:filepath",
+      "after_move:THE-DOWNLOADER-FILEPATH:%(filepath)s",
       "https://example.com/v",
     ]);
   });
@@ -57,7 +58,7 @@ describe("buildVideoDownloadArgs", () => {
       "mp4",
       "--progress",
       "--print",
-      "after_move:filepath",
+      "after_move:THE-DOWNLOADER-FILEPATH:%(filepath)s",
       "https://example.com/v",
     ]);
   });
@@ -76,7 +77,7 @@ describe("runVideoDownload", () => {
     ffmpegPath: "/ff",
   };
 
-  it("reports progress and resolves with the downloaded file path", async () => {
+  it("reports progress and resolves with the tagged filepath", async () => {
     const child = fakeChild();
     (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
 
@@ -84,11 +85,29 @@ describe("runVideoDownload", () => {
     const promise = runVideoDownload("/yt-dlp", options, onProgress);
 
     child.stdout.emit("data", Buffer.from("[download]  42.0% of 10.00MiB\n"));
-    child.stdout.emit("data", Buffer.from("/out/My Video.mp4\n"));
+    child.stdout.emit("data", Buffer.from("THE-DOWNLOADER-FILEPATH:/out/My Video.mp4\n"));
     child.emit("close", 0);
 
     await expect(promise).resolves.toEqual({ filePath: "/out/My Video.mp4" });
     expect(onProgress).toHaveBeenCalledWith(42);
+  });
+
+  it("ignores untagged path-like lines (e.g. post-processor [ExtractAudio] Destination) — they no longer overwrite the real after_move filepath", async () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const promise = runVideoDownload("/yt-dlp", options, vi.fn());
+
+    // Real-world yt-dlp sequence: post-processor lines print absolute paths
+    // BEFORE the after_move tag. The old logic kept the last `/`-prefixed
+    // line, so the intermediate path won. With the tag, only the tagged line
+    // counts.
+    child.stdout.emit("data", Buffer.from("[ExtractAudio] Destination: /out/My Video.intermediate.opus\n"));
+    child.stdout.emit("data", Buffer.from("Deleting original file /out/My Video.webm (pass -k to keep)\n"));
+    child.stdout.emit("data", Buffer.from("THE-DOWNLOADER-FILEPATH:/out/My Video.mp3\n"));
+    child.emit("close", 0);
+
+    await expect(promise).resolves.toEqual({ filePath: "/out/My Video.mp3" });
   });
 
   it("rejects with the stderr text on a non-zero exit", async () => {
@@ -102,13 +121,82 @@ describe("runVideoDownload", () => {
 
     await expect(promise).rejects.toThrow("ERROR: Video unavailable");
   });
+
+  it("closes stdin so yt-dlp cannot hang on an interactive prompt (2FA, cookie passphrase, etc.)", () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    runVideoDownload("/yt-dlp", options, vi.fn());
+
+    expect(spawn).toHaveBeenCalledWith(
+      "/yt-dlp",
+      expect.any(Array),
+      expect.objectContaining({ stdio: ["ignore", "pipe", "pipe"] }),
+    );
+  });
+
+  it("kills yt-dlp and rejects when no output arrives within options.idleMs", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = fakeChild();
+      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+      const promise = runVideoDownload("/yt-dlp", { ...options, idleMs: 5_000 }, vi.fn());
+      const assertion = expect(promise).rejects.toThrow(/no output|stuck|killed/i);
+
+      // yt-dlp prints an extractor selection line, then hangs.
+      child.stdout.emit("data", Buffer.from("[youtube] Extracting video info...\n"));
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      await assertion;
+      expect(child.kill).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("extractDumpJson", () => {
+  const json = JSON.stringify({ title: "Hello", duration: 42, formats: [] });
+
+  it("parses a clean JSON-only stdout", () => {
+    expect(extractDumpJson(json)).toMatchObject({ title: "Hello" });
+  });
+
+  it("skips a [debug] line emitted before the JSON", () => {
+    expect(extractDumpJson(`[debug] 2026-05-21 12:00:00 loading plugin\n${json}`)).toMatchObject({ title: "Hello" });
+  });
+
+  it("skips a [warning] line emitted before the JSON", () => {
+    expect(extractDumpJson(`[youtube] WARNING: Falling back to web client\n${json}`)).toMatchObject({ title: "Hello" });
+  });
+
+  it("skips multiple noise lines before the JSON", () => {
+    const noisy = ["[debug] foo", "[warning] bar", "[info] baz", json].join("\n");
+    expect(extractDumpJson(noisy)).toMatchObject({ title: "Hello" });
+  });
+
+  it("parses pretty-printed (multi-line) JSON, including a noise line before it", () => {
+    const pretty = JSON.stringify({ title: "Hello", formats: [{ ext: "mp4" }] }, null, 2);
+    expect(extractDumpJson(`[debug] header\n${pretty}`)).toMatchObject({ title: "Hello" });
+  });
+
+  it("parses JSON whose opening brace is indented (leading whitespace on the first JSON line)", () => {
+    expect(extractDumpJson(`   ${json}`)).toMatchObject({ title: "Hello" });
+  });
+
+  it("throws a clear error when stdout contains no JSON object", () => {
+    expect(() => extractDumpJson("[error] Sign in to confirm you're not a bot")).toThrow(/no JSON metadata/);
+  });
+
+  it("throws a clear error on empty stdout", () => {
+    expect(() => extractDumpJson("")).toThrow(/no JSON metadata/);
+  });
 });
 
 describe("buildThumbnailArgs", () => {
   it("builds args that fetch only the thumbnail image", () => {
-    expect(
-      buildThumbnailArgs({ url: "https://example.com/v", outputTemplate: "/out/%(title)s.%(ext)s" }),
-    ).toEqual([
+    expect(buildThumbnailArgs({ url: "https://example.com/v", outputTemplate: "/out/%(title)s.%(ext)s" })).toEqual([
       "--write-thumbnail",
       "--skip-download",
       "--no-playlist",

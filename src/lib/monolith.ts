@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { DEFAULT_IDLE_MS, runWithWatchdog } from "./run.js";
 
 export type MonolithSaveOptions = {
   url: string;
@@ -6,6 +6,10 @@ export type MonolithSaveOptions = {
   outputPath: string;
   /** True selects Lightweight mode (`--no-js`). */
   noJavaScript: boolean;
+  /** Idle-watchdog window in ms. Defaults to DEFAULT_IDLE_MS if omitted. */
+  idleMs?: number;
+  /** Aborting cancels the save mid-flight. */
+  abortSignal?: AbortSignal;
 };
 
 /** Build monolith CLI args. monolith writes the self-contained HTML to `outputPath`. */
@@ -44,19 +48,16 @@ export type MonolithResult = { filePath: string };
 
 /**
  * Run monolith. Resolves with the saved file path on a zero exit; rejects with
- * the stderr text on a non-zero exit. monolith writes the file itself via
- * `--output`, so the runner does not touch the filesystem. There is no progress
- * callback — monolith emits no parseable progress stream.
+ * the stderr text on a non-zero exit or with a watchdog kill if monolith stalls.
+ * monolith writes the file itself via `--output`, so the runner does not touch
+ * the filesystem. There is no progress callback — monolith emits no parseable
+ * progress stream.
  */
-export function runMonolithSave(binaryPath: string, options: MonolithSaveOptions): Promise<MonolithResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(binaryPath, buildMonolithArgs(options));
-    let stderr = "";
-    child.stderr.on("data", (data: Buffer) => (stderr += data.toString()));
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve({ filePath: options.outputPath });
-      else reject(new Error(stderr.trim() || `monolith exited with code ${code}`));
-    });
+export async function runMonolithSave(binaryPath: string, options: MonolithSaveOptions): Promise<MonolithResult> {
+  const { code, stderr } = await runWithWatchdog(binaryPath, buildMonolithArgs(options), {
+    idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
+    abortSignal: options.abortSignal,
   });
+  if (code === 0) return { filePath: options.outputPath };
+  throw new Error(stderr.trim() || `monolith exited with code ${code}`);
 }
