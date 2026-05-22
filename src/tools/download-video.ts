@@ -56,10 +56,12 @@ export default async function tool(input: Input) {
   const bestFormat = formats["Video"][0]; // First format in Video category is best quality
   if (bestFormat) {
     const formatValue = getFormatValue(bestFormat);
-    const [downloadFormat, recodeFormat] = formatValue.split("#");
+    const [downloadFormat, container] = formatValue.split("#");
     options.push("--ffmpeg-location", ffmpegPath);
     options.push("--format", downloadFormat);
-    options.push("--recode-video", recodeFormat);
+    // Remux into the container (lossless stream copy) rather than --recode-video,
+    // which forces a slow full re-encode. Mirrors buildVideoDownloadArgs.
+    options.push("--merge-output-format", container);
   }
 
   options.push("--print", "after_move:filepath");
