@@ -80,12 +80,15 @@ const SPOTDL_SETUP_GUIDE_URL = "https://github.com/sth3no/the-downloader/blob/ma
 
 /** Turn a rejected runner into a red, copyable failure toast — or a neutral "Cancelled" toast when the user pressed Stop. */
 function failToast(toast: Toast, error: unknown) {
+  // Clear the in-flight "Stop" action up front — every failure path below
+  // either sets its own secondary action or wants none, and a dead Stop
+  // button left over from startAbortable would do nothing.
+  toast.secondaryAction = undefined;
   if (error instanceof AbortError) {
     toast.style = Toast.Style.Failure;
     toast.title = "Cancelled";
     toast.message = undefined;
     toast.primaryAction = undefined;
-    toast.secondaryAction = undefined;
     return;
   }
   if (error instanceof SpotdlDownloadError) {
