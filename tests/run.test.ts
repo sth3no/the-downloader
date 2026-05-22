@@ -38,6 +38,39 @@ describe("runWithWatchdog", () => {
     );
   });
 
+  it("spawns the child detached so it leads its own process group — lets termination reach grandchildren (yt-dlp's ffmpeg) instead of orphaning them", () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    runWithWatchdog("/bin/x", ["arg"], { idleMs: 1_000 });
+
+    expect(spawn).toHaveBeenCalledWith("/bin/x", ["arg"], expect.objectContaining({ detached: true }));
+  });
+
+  it("signals the whole process group (negative pid) on termination so a grandchild like ffmpeg dies with the child", async () => {
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    try {
+      const child = fakeChild();
+      (child as unknown as { pid: number }).pid = 4242;
+      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+      const controller = new AbortController();
+      const promise = runWithWatchdog("/bin/x", [], { idleMs: 60_000, abortSignal: controller.signal });
+      const assertion = expect(promise).rejects.toBeInstanceOf(AbortError);
+
+      child.stdout.emit("data", Buffer.from("running\n"));
+      controller.abort();
+      // process.kill is stubbed, so the group SIGTERM is a no-op here — emit
+      // close ourselves to model the group going down and let the promise settle.
+      child.emit("close", null);
+
+      await assertion;
+      expect(killSpy).toHaveBeenCalledWith(-4242);
+    } finally {
+      killSpy.mockRestore();
+    }
+  });
+
   it("resolves with code + accumulated stdout/stderr on close", async () => {
     const child = fakeChild();
     (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);

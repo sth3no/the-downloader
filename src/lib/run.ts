@@ -65,9 +65,15 @@ export function runWithWatchdog(binary: string, args: string[], options: RunOpti
       reject(new AbortError());
       return;
     }
+    const isPosix = process.platform !== "win32";
     const child = spawn(binary, args, {
       stdio: ["ignore", "pipe", "pipe"],
       env: options.env ?? process.env,
+      // On POSIX, run the child as its own process-group leader so termination
+      // can signal the whole group (negative pid) — otherwise killing yt-dlp
+      // orphans its ffmpeg grandchild, which keeps re-encoding under launchd.
+      // Windows has no POSIX process groups; fall back to a direct child kill.
+      detached: isPosix,
     });
     let stdout = "";
     let stderr = "";
@@ -97,25 +103,38 @@ export function runWithWatchdog(binary: string, args: string[], options: RunOpti
       reject(error);
     };
 
+    // Signal the child's whole process group on POSIX (negative pid) so
+    // grandchildren — yt-dlp's ffmpeg post-processor — die with it instead of
+    // orphaning. Falls back to a direct child kill when there's no group
+    // (Windows) or the group has already gone. No signal → SIGTERM.
+    const killGroup = (signal?: NodeJS.Signals) => {
+      const pid = child.pid;
+      if (isPosix && typeof pid === "number") {
+        try {
+          if (signal) process.kill(-pid, signal);
+          else process.kill(-pid);
+          return;
+        } catch {
+          /* group already gone — fall through to a direct child kill */
+        }
+      }
+      try {
+        if (signal) child.kill(signal);
+        else child.kill();
+      } catch {
+        /* child may already be dead */
+      }
+    };
+
     const beginTermination = (reason: "abort" | "idle") => {
       if (settled || termination) return;
       termination = reason;
       if (idleTimer) clearTimeout(idleTimer);
       // Escalate to SIGKILL if the child ignores SIGTERM, so `close` is
       // guaranteed to fire and the promise can settle. Set the timer before
-      // calling kill() so a synchronous close (in tests) can clear it.
-      killTimer = setTimeout(() => {
-        try {
-          child.kill("SIGKILL");
-        } catch {
-          /* child may already be dead */
-        }
-      }, KILL_GRACE_MS);
-      try {
-        child.kill();
-      } catch {
-        /* child may already be dead */
-      }
+      // the first signal so a synchronous close (in tests) can clear it.
+      killTimer = setTimeout(() => killGroup("SIGKILL"), KILL_GRACE_MS);
+      killGroup();
     };
 
     const onAbort = () => beginTermination("abort");

@@ -46,7 +46,10 @@ describe("buildVideoDownloadArgs", () => {
     expect(args[args.indexOf("--audio-format") + 1]).toBe("opus");
   });
 
-  it("downloads and recodes video for a non-audio format", () => {
+  it("downloads and remuxes (not re-encodes) video into the requested container", () => {
+    // --merge-output-format remuxes the merged streams into the container with
+    // no transcode. The old --recode-video forced a full, slow re-encode that
+    // tripped the idle watchdog and left a half-written file behind.
     expect(buildVideoDownloadArgs({ ...base, format: "bestvideo+bestaudio/best#mp4" })).toEqual([
       "-o",
       "/out/%(title)s.%(ext)s",
@@ -54,7 +57,7 @@ describe("buildVideoDownloadArgs", () => {
       "/ff",
       "--format",
       "bestvideo+bestaudio/best",
-      "--recode-video",
+      "--merge-output-format",
       "mp4",
       "--progress",
       "--print",

@@ -67,20 +67,27 @@ const FILEPATH_TAG = "THE-DOWNLOADER-FILEPATH:";
 const FILEPATH_LINE_RE = new RegExp(`^${FILEPATH_TAG}(.+)$`);
 
 /**
- * Build yt-dlp CLI args for a media download. `format` is a `"<download>#<recode>"`
- * pair: when the download half is `bestaudio` the audio is extracted to the recode
- * format, otherwise the video is downloaded and recoded to the recode container.
+ * Build yt-dlp CLI args for a media download. `format` is a `"<download>#<target>"`
+ * pair: when the download half is `bestaudio` the audio is extracted to the target
+ * audio format, otherwise the video streams are downloaded and **remuxed** into the
+ * target container with `--merge-output-format`.
+ *
+ * Remuxing copies the streams (fast, lossless). The old `--recode-video` forced a
+ * full re-encode that ran ffmpeg silently for minutes, tripping the idle watchdog
+ * mid-encode and leaving a half-written file behind. The format selector already
+ * steers toward container-compatible codecs (see `videoFormatSelector`), so a copy
+ * is all that's needed.
  */
 export function buildVideoDownloadArgs(a: VideoDownloadArgs): string[] {
   const args = ["-o", a.outputTemplate, "--ffmpeg-location", a.ffmpegPath];
   if (a.denoPath) {
     args.push("--js-runtimes", `deno:${a.denoPath}`);
   }
-  const [downloadFormat, recodeFormat] = a.format.split("#");
+  const [downloadFormat, target] = a.format.split("#");
   if (downloadFormat === "bestaudio") {
-    args.push("--extract-audio", "--audio-format", recodeFormat, "--audio-quality", "0");
+    args.push("--extract-audio", "--audio-format", target, "--audio-quality", "0");
   } else {
-    args.push("--format", downloadFormat, "--recode-video", recodeFormat);
+    args.push("--format", downloadFormat, "--merge-output-format", target);
   }
   args.push("--progress", "--print", `after_move:${FILEPATH_TAG}%(filepath)s`, a.url);
   return args;
