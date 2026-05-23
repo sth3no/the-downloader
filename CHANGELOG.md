@@ -1,4 +1,4 @@
-# Video Downloader Changelog
+# The Downloader Changelog
 
 ## [Fix: Hang Prevention] - 2026-05-21
 
