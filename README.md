@@ -2,6 +2,8 @@
 
 Download videos, audio, image galleries, Spotify music, and complete webpages from the web — straight from Raycast.
 
+![The Downloader — Download form](metadata/the-downloader-1.png)
+
 ## Commands
 
 - **Download** — paste a URL, choose what to grab (video, audio, image, transcript, or webpage) and the quality, then download.
