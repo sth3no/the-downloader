@@ -82,10 +82,6 @@
 
 ## [Chore: Fixed a typo in the installation view] - 2025-08-22
 
-## [Chore] - 2025-03-10
-
-- Rename extension folder and handle to `video-downloader`
-
 ## [Fixes] - 2025-03-07
 
 - Avoid to run `onSubmit` while fetching video
