@@ -36,9 +36,18 @@
       "subtitle": "The Downloader",
       "description": "Paste a URL and download it instantly using your saved defaults — no form.",
       "mode": "no-view",
-      "keywords": ["quick", "instant", "paste"],
+      "keywords": [
+        "quick",
+        "instant",
+        "paste"
+      ],
       "arguments": [
-        { "name": "url", "type": "text", "placeholder": "URL", "required": true }
+        {
+          "name": "url",
+          "type": "text",
+          "placeholder": "URL",
+          "required": true
+        }
       ]
     }
   ],
@@ -71,8 +80,14 @@
       "default": "video",
       "required": false,
       "data": [
-        { "title": "Video", "value": "video" },
-        { "title": "Audio Only", "value": "audio" }
+        {
+          "title": "Video",
+          "value": "video"
+        },
+        {
+          "title": "Audio Only",
+          "value": "audio"
+        }
       ]
     },
     {
@@ -83,11 +98,26 @@
       "default": "best",
       "required": false,
       "data": [
-        { "title": "Best Available", "value": "best" },
-        { "title": "1080p", "value": "1080" },
-        { "title": "720p", "value": "720" },
-        { "title": "480p", "value": "480" },
-        { "title": "Smallest File", "value": "smallest" }
+        {
+          "title": "Best Available",
+          "value": "best"
+        },
+        {
+          "title": "1080p",
+          "value": "1080"
+        },
+        {
+          "title": "720p",
+          "value": "720"
+        },
+        {
+          "title": "480p",
+          "value": "480"
+        },
+        {
+          "title": "Smallest File",
+          "value": "smallest"
+        }
       ]
     },
     {
@@ -98,9 +128,18 @@
       "default": "mp4",
       "required": false,
       "data": [
-        { "title": "MP4", "value": "mp4" },
-        { "title": "MKV", "value": "mkv" },
-        { "title": "WebM", "value": "webm" }
+        {
+          "title": "MP4",
+          "value": "mp4"
+        },
+        {
+          "title": "MKV",
+          "value": "mkv"
+        },
+        {
+          "title": "WebM",
+          "value": "webm"
+        }
       ]
     },
     {
@@ -111,9 +150,18 @@
       "default": "mp3",
       "required": false,
       "data": [
-        { "title": "MP3", "value": "mp3" },
-        { "title": "M4A", "value": "m4a" },
-        { "title": "Opus", "value": "opus" }
+        {
+          "title": "MP3",
+          "value": "mp3"
+        },
+        {
+          "title": "M4A",
+          "value": "m4a"
+        },
+        {
+          "title": "Opus",
+          "value": "opus"
+        }
       ]
     },
     {
@@ -133,10 +181,22 @@
       "default": "mp3",
       "required": false,
       "data": [
-        { "title": "MP3", "value": "mp3" },
-        { "title": "M4A", "value": "m4a" },
-        { "title": "Opus", "value": "opus" },
-        { "title": "FLAC", "value": "flac" }
+        {
+          "title": "MP3",
+          "value": "mp3"
+        },
+        {
+          "title": "M4A",
+          "value": "m4a"
+        },
+        {
+          "title": "Opus",
+          "value": "opus"
+        },
+        {
+          "title": "FLAC",
+          "value": "flac"
+        }
       ]
     },
     {
@@ -147,8 +207,14 @@
       "default": "complete",
       "required": false,
       "data": [
-        { "title": "Complete", "value": "complete" },
-        { "title": "Lightweight (no JavaScript)", "value": "lightweight" }
+        {
+          "title": "Complete",
+          "value": "complete"
+        },
+        {
+          "title": "Lightweight (no JavaScript)",
+          "value": "lightweight"
+        }
       ]
     },
     {
@@ -186,20 +252,62 @@
       "default": "",
       "required": false,
       "data": [
-        { "title": "None", "value": "" },
-        { "title": "Chrome", "value": "chrome" },
-        { "title": "Chromium", "value": "chromium" },
-        { "title": "Firefox", "value": "firefox" },
-        { "title": "Safari", "value": "safari" },
-        { "title": "Edge", "value": "edge" },
-        { "title": "Brave", "value": "brave" },
-        { "title": "Opera", "value": "opera" },
-        { "title": "Vivaldi", "value": "vivaldi" },
-        { "title": "LibreWolf", "value": "librewolf" },
-        { "title": "Arc", "value": "arc" },
-        { "title": "Zen", "value": "zen" },
-        { "title": "Floorp", "value": "floorp" },
-        { "title": "Custom", "value": "custom" }
+        {
+          "title": "None",
+          "value": ""
+        },
+        {
+          "title": "Chrome",
+          "value": "chrome"
+        },
+        {
+          "title": "Chromium",
+          "value": "chromium"
+        },
+        {
+          "title": "Firefox",
+          "value": "firefox"
+        },
+        {
+          "title": "Safari",
+          "value": "safari"
+        },
+        {
+          "title": "Edge",
+          "value": "edge"
+        },
+        {
+          "title": "Brave",
+          "value": "brave"
+        },
+        {
+          "title": "Opera",
+          "value": "opera"
+        },
+        {
+          "title": "Vivaldi",
+          "value": "vivaldi"
+        },
+        {
+          "title": "LibreWolf",
+          "value": "librewolf"
+        },
+        {
+          "title": "Arc",
+          "value": "arc"
+        },
+        {
+          "title": "Zen",
+          "value": "zen"
+        },
+        {
+          "title": "Floorp",
+          "value": "floorp"
+        },
+        {
+          "title": "Custom",
+          "value": "custom"
+        }
       ]
     },
     {
@@ -369,7 +477,6 @@
     "@types/validator": "^13.15.10",
     "date-fns": "^4.1.0",
     "execa": "^9.6.0",
-    "pretty-bytes": "^6.1.1",
     "srt-parser-2": "^1.2.3",
     "validator": "^13.15.23"
   },
