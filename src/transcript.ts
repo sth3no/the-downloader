@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "path";
 import crypto from "node:crypto";
 import { environment } from "@raycast/api";
-import { Video } from "./types.js";
 import { forceIpv4, getffmpegPath, getytdlPath, sanitizeVideoTitle } from "./utils.js";
+import { extractDumpJson } from "./lib/ytdlp.js";
 import SRTParser from "srt-parser-2";
 
 /**
@@ -36,10 +36,15 @@ export default async function extractTranscript(url: string, language: string = 
     throw new Error("ffmpeg is not installed");
   }
 
-  // First get video info to get the title
-  const videoInfo = await execa(ytdlPath, [forceIpv4 ? "--force-ipv4" : "", "--dump-json", url].filter(Boolean));
+  // First get video info to get the title. `--no-warnings --quiet` plus the
+  // `extractDumpJson` helper keeps user yt-dlp config that emits `[debug]` /
+  // `[warning]` lines on stdout from corrupting the JSON parse.
+  const videoInfo = await execa(
+    ytdlPath,
+    [forceIpv4 ? "--force-ipv4" : "", "--no-warnings", "--quiet", "--dump-json", url].filter(Boolean),
+  );
 
-  const video = JSON.parse(videoInfo.stdout) as Video;
+  const video = extractDumpJson(videoInfo.stdout);
 
   // Check if it's a live stream
   if (video.live_status !== "not_live" && video.live_status !== undefined) {
