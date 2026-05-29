@@ -140,6 +140,10 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
   // does not leave zombie yt-dlp / gallery-dl / monolith / spotdl children
   // attached to the user's Raycast process.
   const activeAbort = useRef<AbortController | null>(null);
+  // Controller for the metadata (--dump-json) fetch. usePromise replaces this on
+  // every re-run and aborts the prior one, so editing the URL or dismissing the
+  // form kills the in-flight yt-dlp metadata child instead of orphaning it.
+  const metaAbortable = useRef<AbortController>(null);
 
   useEffect(() => {
     return () => {
@@ -198,11 +202,15 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         u,
         prefs.forceIpv4,
         fs.existsSync(denoPath) ? denoPath : undefined,
+        {
+          signal: metaAbortable.current?.signal,
+          timeoutMs: getIdleTimeoutMs(),
+        },
       );
       return { ...data, title: sanitizeVideoTitle(data.title) };
     },
     [url, shouldFetchMeta],
-    { onError: () => undefined },
+    { onError: () => undefined, abortable: metaAbortable },
   );
 
   const liveStream = !!video && video.live_status !== undefined && video.live_status !== "not_live";
