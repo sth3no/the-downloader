@@ -20,6 +20,7 @@ import { runVideoDownload } from "./lib/ytdlp.js";
 import { isLoginRequiredError, runGalleryDownload } from "./lib/gallerydl.js";
 import { resolveBrowser } from "./lib/browsers.js";
 import { AbortError } from "./lib/run.js";
+import { isAppleSilicon, isRosettaInstalled, RosettaRequiredError } from "./lib/managed-binary.js";
 import { runSpotdlDownload, SpotdlDownloadError } from "./lib/spotdl.js";
 import { runMonolithSave, webpageFilename } from "./lib/monolith.js";
 import {
@@ -185,6 +186,9 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
 
     const { signal } = attachStop(toast);
     try {
+      // Surface the friendly Rosetta hint for an already-present x86_64 binary
+      // on an Apple Silicon Mac without Rosetta, instead of a raw "Bad CPU type".
+      if (isAppleSilicon() && !isRosettaInstalled()) throw new RosettaRequiredError();
       const { tracks } = await runSpotdlDownload(
         spotdlPath,
         {
@@ -211,6 +215,12 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
     } catch (error) {
       if (isAbort(error)) {
         paintCancelled(toast);
+      } else if (error instanceof RosettaRequiredError) {
+        toast.style = Toast.Style.Failure;
+        toast.title = "spotDL needs Rosetta 2";
+        toast.message = error.message;
+        toast.primaryAction = { title: "Copy Error", onAction: () => Clipboard.copy(error.message) };
+        toast.secondaryAction = undefined;
       } else if (error instanceof SpotdlDownloadError) {
         const partial =
           error.tracks > 0 ? `Downloaded ${error.tracks} track${error.tracks === 1 ? "" : "s"} before failure. ` : "";

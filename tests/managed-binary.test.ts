@@ -5,7 +5,13 @@ vi.mock("node:fs", () => ({
 }));
 
 import * as fs from "node:fs";
-import { isAppleSilicon, isRosettaInstalled, resolveSpotdlAsset } from "../src/lib/managed-binary";
+import {
+  downloadSpotdl,
+  isAppleSilicon,
+  isRosettaInstalled,
+  resolveSpotdlAsset,
+  RosettaRequiredError,
+} from "../src/lib/managed-binary";
 
 const assets = [
   { name: "spotDL", url: "u0" },
@@ -42,8 +48,23 @@ function setArch(platform: NodeJS.Platform, arch: NodeJS.Architecture) {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
   Object.defineProperty(process, "arch", { value: originalArch, configurable: true });
+});
+
+describe("downloadSpotdl Rosetta fail-fast", () => {
+  it("throws RosettaRequiredError without downloading on Apple Silicon lacking Rosetta", async () => {
+    setArch("darwin", "arm64");
+    // isRosettaInstalled checks fs.existsSync(ROSETTA_RUNTIME_PATH) → absent.
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(downloadSpotdl("/tmp/the-downloader-test")).rejects.toBeInstanceOf(RosettaRequiredError);
+    // No bytes downloaded — the broken binary is never written to disk.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe("isAppleSilicon", () => {

@@ -83,6 +83,17 @@ export async function getLatestRelease(): Promise<SpotdlRelease> {
  * leaves a half-written binary at the resolved path. Returns the final path.
  */
 export async function downloadSpotdl(supportDir: string): Promise<string> {
+  // Fail fast on Apple Silicon without Rosetta 2: the prebuilt binary is
+  // x86_64-only and can never run here, so don't download ~40MB just to leave a
+  // broken binary on disk. Previously the Rosetta check ran AFTER the binary was
+  // renamed into place, so every fs.existsSync(getSpotdlPath()) gate then treated
+  // the unrunnable binary as installed — the Installer never reappeared and
+  // Spotify downloads failed forever with a raw "Bad CPU type". Checking up front
+  // means no bytes are written when the binary can't run.
+  if (isAppleSilicon() && !isRosettaInstalled()) {
+    throw new RosettaRequiredError();
+  }
+
   const release = await getLatestRelease();
   const asset = resolveSpotdlAsset(process.platform, release.assets);
 
@@ -108,7 +119,6 @@ export async function downloadSpotdl(supportDir: string): Promise<string> {
     } catch {
       // codesign unavailable or signing rejected — the binary may still run.
     }
-    if (!isRosettaInstalled()) throw new RosettaRequiredError();
   }
   return finalPath;
 }

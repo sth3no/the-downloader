@@ -32,6 +32,7 @@ import { fetchVideoInfo, runThumbnailDownload, runVideoDownload } from "../lib/y
 import { isLoginRequiredError, runGalleryDownload } from "../lib/gallerydl.js";
 import { resolveBrowser } from "../lib/browsers.js";
 import { AbortError } from "../lib/run.js";
+import { isAppleSilicon, isRosettaInstalled, RosettaRequiredError } from "../lib/managed-binary.js";
 import { runSpotdlDownload, SpotdlDownloadError } from "../lib/spotdl.js";
 import { runMonolithSave, webpageFilename } from "../lib/monolith.js";
 import extractTranscript from "../transcript.js";
@@ -97,6 +98,12 @@ function failToast(toast: Toast, error: unknown) {
     toast.title = "Cancelled";
     toast.message = undefined;
     toast.primaryAction = undefined;
+    return;
+  }
+  if (error instanceof RosettaRequiredError) {
+    toast.style = Toast.Style.Failure;
+    toast.title = "spotDL needs Rosetta 2";
+    toast.message = error.message;
     return;
   }
   if (error instanceof SpotdlDownloadError) {
@@ -438,6 +445,10 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
 
       const { signal, done } = startAbortable(toast);
       try {
+        // A managed spotDL binary that already exists (e.g. installed before the
+        // Rosetta guard, or copied from another machine) would otherwise fail
+        // with a cryptic "Bad CPU type". Surface the friendly hint instead.
+        if (isAppleSilicon() && !isRosettaInstalled()) throw new RosettaRequiredError();
         const { tracks } = await runSpotdlDownload(
           getSpotdlPath(),
           {
