@@ -7,9 +7,9 @@ import { execSync } from "child_process";
 import { findHomebrewPath, resolveBinary, isWindows, isMac } from "./lib/binary.js";
 import { windowsWingetPath } from "./lib/platform-paths.js";
 import { DEFAULT_IDLE_MS } from "./lib/run.js";
-import { isValidUrl } from "./lib/url.js";
+import { isValidUrl, normalizeUrl } from "./lib/url.js";
 
-export { isWindows, isMac, isValidUrl };
+export { isWindows, isMac, isValidUrl, normalizeUrl };
 
 function sanitizeWindowsPath(path: string): string {
   return path.replace(/\r/g, "").replace(/\n/g, "").trim();

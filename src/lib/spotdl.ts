@@ -30,7 +30,12 @@ export type SpotdlDownloadOptions = {
   abortSignal?: AbortSignal;
 };
 
-/** Matches both `https://open.spotify.com[/<locale>]/playlist/...` URLs and `spotify:playlist:...` URIs. */
+/**
+ * Matches `https://open.spotify.com[/<locale>]/playlist/...` playlist URLs. (It
+ * also matches `spotify:playlist:...` URIs, but those never reach production:
+ * isValidUrl rejects the `spotify:` scheme and detectSource only routes the
+ * open.spotify.com host here.)
+ */
 const PLAYLIST_URL = /(?:\/|:)playlist(?:\/|:)/i;
 
 /**

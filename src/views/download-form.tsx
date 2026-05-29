@@ -51,6 +51,7 @@ import {
   getffprobePath,
   getytdlPath,
   isValidUrl,
+  normalizeUrl,
   sanitizeVideoTitle,
 } from "../utils.js";
 import Installer from "./installer.js";
@@ -258,11 +259,14 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       await showToast({ style: Toast.Style.Failure, title: "A download is already running" });
       return;
     }
-    const submitUrl = String(values.url ?? "").trim();
-    if (!isValidUrl(submitUrl)) {
+    const rawUrl = String(values.url ?? "").trim();
+    if (!isValidUrl(rawUrl)) {
       await showToast({ style: Toast.Style.Failure, title: "Enter a valid URL" });
       return;
     }
+    // Prefix https:// for scheme-less input before any runner sees it (monolith
+    // treats a bare host as a local file path).
+    const submitUrl = normalizeUrl(rawUrl);
     const ft = values.filetype as Filetype;
     const src = detectSource(submitUrl);
     const folder = (values.destination as string[] | undefined)?.[0] ?? downloadPath;

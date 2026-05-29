@@ -34,6 +34,7 @@ import {
   getffprobePath,
   getytdlPath,
   isValidUrl,
+  normalizeUrl,
 } from "./utils.js";
 
 /** A no-view command cannot render the Installer view, so a missing tool is
@@ -82,12 +83,14 @@ function paintCancelled(toast: Toast) {
 }
 
 export default async function FastDownload(props: LaunchProps<{ arguments: Arguments.FastDownload }>): Promise<void> {
-  const { url } = props.arguments;
+  const { url: rawUrl } = props.arguments;
 
-  if (!isValidUrl(url)) {
-    await showToast({ style: Toast.Style.Failure, title: "Invalid URL", message: url });
+  if (!isValidUrl(rawUrl)) {
+    await showToast({ style: Toast.Style.Failure, title: "Invalid URL", message: rawUrl });
     return;
   }
+  // Prefix https:// for scheme-less input before any runner sees it.
+  const url = normalizeUrl(rawUrl);
 
   const {
     cookiesFromBrowser,
