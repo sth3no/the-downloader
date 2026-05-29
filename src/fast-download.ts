@@ -130,11 +130,19 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
           toast.message = `${p.files} files`;
         },
       );
-      toast.style = Toast.Style.Success;
-      toast.title = "Downloaded";
-      toast.message = `${files} files`;
-      toast.primaryAction = { title: "Open Folder", onAction: () => open(downloadPath) };
-      toast.secondaryAction = undefined;
+      if (files === 0) {
+        toast.style = Toast.Style.Failure;
+        toast.title = "Nothing downloaded";
+        toast.message = "gallery-dl found no new files — they may already exist, or the gallery needs a login.";
+        toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
+        toast.secondaryAction = undefined;
+      } else {
+        toast.style = Toast.Style.Success;
+        toast.title = "Downloaded";
+        toast.message = `${files} files`;
+        toast.primaryAction = { title: "Open Folder", onAction: () => open(downloadPath) };
+        toast.secondaryAction = undefined;
+      }
     } catch (error) {
       if (isAbort(error)) {
         paintCancelled(toast);

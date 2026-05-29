@@ -364,11 +364,21 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             toast.message = `${p.files} files`;
           },
         );
-        toast.style = Toast.Style.Success;
-        toast.title = "Gallery Downloaded";
-        toast.message = `${files} files`;
-        toast.primaryAction = { title: "Open Folder", onAction: () => open(folder) };
-        toast.secondaryAction = undefined;
+        if (files === 0) {
+          // Exit 0 with nothing new is not a real "success" — surface it
+          // honestly instead of a green "0 files" toast.
+          toast.style = Toast.Style.Failure;
+          toast.title = "Nothing downloaded";
+          toast.message = "gallery-dl found no new files — they may already exist, or the gallery needs a login.";
+          toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
+          toast.secondaryAction = undefined;
+        } else {
+          toast.style = Toast.Style.Success;
+          toast.title = "Gallery Downloaded";
+          toast.message = `${files} files`;
+          toast.primaryAction = { title: "Open Folder", onAction: () => open(folder) };
+          toast.secondaryAction = undefined;
+        }
       } catch (error) {
         if (isLoginRequiredError(error)) {
           toast.style = Toast.Style.Failure;
