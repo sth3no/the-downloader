@@ -239,7 +239,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
   const urlError =
     url && !validUrl
       ? "Enter a valid URL"
-      : liveStream && (filetype === "video" || filetype === "audio")
+      : liveStream && (filetype === "video" || filetype === "audio" || filetype === "transcript")
         ? "Live streams are not supported"
         : undefined;
 
@@ -260,7 +260,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
     const src = detectSource(submitUrl);
     const folder = (values.destination as string[] | undefined)?.[0] ?? downloadPath;
 
-    if (liveStream && (ft === "video" || ft === "audio")) {
+    if (liveStream && (ft === "video" || ft === "audio" || ft === "transcript")) {
       await showToast({ style: Toast.Style.Failure, title: "Live streams are not supported" });
       return;
     }
@@ -306,9 +306,16 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
 
     if (ft === "transcript") {
       const toast = await showToast({ style: Toast.Style.Animated, title: "Extracting Transcript" });
+      const { signal, done } = startAbortable(toast);
       try {
-        const { transcript, title } = await extractTranscript(submitUrl);
+        const { transcript, title } = await extractTranscript(submitUrl, "en", signal);
         const filePath = path.join(folder, `${title}.txt`);
+        // Defense in depth: sanitizeVideoTitle already strips separators, but
+        // assert the resolved path stays inside the chosen folder before writing
+        // so a pathological title can never escape it.
+        if (path.relative(folder, filePath).startsWith("..")) {
+          throw new Error("Refusing to write the transcript outside the chosen folder.");
+        }
         fs.writeFileSync(filePath, transcript, "utf-8");
         toast.style = Toast.Style.Success;
         toast.title = "Transcript Saved";
@@ -317,6 +324,8 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         toast.secondaryAction = { title: "Copy Transcript", onAction: () => Clipboard.copy(transcript) };
       } catch (error) {
         failToast(toast, error);
+      } finally {
+        done();
       }
       return;
     }
