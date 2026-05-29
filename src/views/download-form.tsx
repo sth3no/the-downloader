@@ -454,7 +454,10 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
           {
             url: submitUrl,
             destination: folder,
-            format: prefs.spotifyAudioFormat,
+            // Honor the live audioFmt dropdown (the only place FLAC is offered);
+            // fall back to the freshly-read preference. Previously this used the
+            // stale module-level pref and silently ignored the dropdown.
+            format: String(values.audioFmt ?? livePrefs.spotifyAudioFormat),
             ffmpegPath: getffmpegPath(),
             clientId,
             clientSecret,
