@@ -57,6 +57,15 @@ export function buildSpotdlArgs(o: SpotdlDownloadOptions): string[] {
   const id = o.clientId?.trim();
   const secret = o.clientSecret?.trim();
   if (id && secret) {
+    // Credentials are passed on argv rather than via SPOTIPY_CLIENT_ID/SECRET
+    // env vars on purpose: spotDL's --client-id/--client-secret options default
+    // to its bundled public app and are always handed to spotipy explicitly, so
+    // spotipy never consults those env vars — omitting the flags would silently
+    // fall back to spotDL's default credentials (the unreliable "Could not get
+    // session auth tokens" path this preference exists to avoid). The residual
+    // exposure (the secret is visible in the process table for the lifetime of
+    // the spotDL run) is bounded to same-user local processes on a single-user
+    // desktop, and the value is a low-sensitivity OAuth *client* secret.
     args.push("--client-id", id, "--client-secret", secret, "--use-official-api");
     if (o.userAuth) {
       args.push("--user-auth");
