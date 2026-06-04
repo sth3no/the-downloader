@@ -22,6 +22,11 @@ function setPlatform(platform: NodeJS.Platform) {
 }
 
 afterEach(() => {
+  // clearAllMocks resets call history on the module-level `spawn` vi.fn() between
+  // tests; restoreAllMocks alone no longer does that (it only restores vi.spyOn
+  // spies), so without this the "already aborted → spawn not called" test would
+  // see calls leaked from earlier tests in this block.
+  vi.clearAllMocks();
   vi.restoreAllMocks();
   Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
 });
