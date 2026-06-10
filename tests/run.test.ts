@@ -333,6 +333,21 @@ describe("runWithWatchdog", () => {
     expect(lines).toEqual(["TAG:/path/file.mp4", "next line"]);
   });
 
+  it("treats bare \\r and \\r\\n as line breaks (progress redraws on a pipe, Windows tools)", async () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const lines: string[] = [];
+    const promise = runWithWatchdog("/bin/x", [], { idleMs: 1_000, onStdoutLine: (l) => lines.push(l) });
+
+    // yt-dlp-style \r-rewritten progress updates, then a CRLF-terminated line.
+    child.stdout.emit("data", Buffer.from("[download] 10%\r[download] 55%\rdone\r\nfinal\n"));
+    child.emit("close", 0);
+
+    await promise;
+    expect(lines).toEqual(["[download] 10%", "[download] 55%", "done", "final"]);
+  });
+
   it("flushes a trailing partial line (no final newline) via onStdoutLine on close", async () => {
     const child = fakeChild();
     (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
