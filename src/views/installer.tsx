@@ -52,6 +52,18 @@ Press **⏎** to download it now. **Please do not close Raycast while the downlo
 
 const SPOTDL_SETUP_GUIDE_URL = "https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md";
 
+/**
+ * Bound every package-manager spawn. execa defaults to no timeout, so a wedged
+ * `brew`/`winget` (e.g. blocked on a lock, or awaiting a prompt on its piped
+ * stdin) would leave the animated toast spinning forever with no error. A real
+ * install of these heavy formulae legitimately runs for minutes, so the cap is
+ * generous — ten minutes — while still bounded. `stdin: "ignore"` detaches the
+ * default stdin pipe so the child can't block on an interactive prompt (sudo,
+ * a license agreement) that never arrives under Raycast.
+ */
+const INSTALL_TIMEOUT_MS = 600_000;
+const INSTALL_EXECA_OPTS = { timeout: INSTALL_TIMEOUT_MS, stdin: "ignore" } as const;
+
 const spotdlInstallGuide = (installed: boolean) => {
   const installBlock = installed
     ? "Set up your Spotify credentials below (about one minute), then press **⏎** to continue."
@@ -141,7 +153,7 @@ function ManagedInstall({
     const installationToast = new Toast({ style: Toast.Style.Animated, title: "Installing spotdl via Homebrew..." });
     await installationToast.show();
     try {
-      await execa(getHomebrewPath(), ["install", "spotdl"]);
+      await execa(getHomebrewPath(), ["install", "spotdl"], INSTALL_EXECA_OPTS);
       await installationToast.hide();
       setIsLoading(false);
       if (executable === "spotdl") {
@@ -221,6 +233,11 @@ function ManagedInstall({
         <Action title="Install Via Homebrew" icon={Icon.Download} onAction={installViaBrew} />
       )}
       {!isLoading && executable === "spotdl" && setupGuideAction}
+      {/* Always rendered — including mid-download — so the panel is never empty
+          while `isLoading` hides the install actions. Gives the user an exit
+          (e.g. to set a manual binary path) instead of being stuck watching a
+          spinner if the download runs long. */}
+      <Action title="Open Extension Preferences" icon={Icon.Cog} onAction={openExtensionPreferences} />
     </ActionPanel>
   );
 }
@@ -242,7 +259,7 @@ function AutoInstall({ executable, onRefresh }: { executable: string; onRefresh:
             await installationToast.show();
 
             try {
-              await execa(getHomebrewPath(), ["install", homebrewFormulaFor(executable)]);
+              await execa(getHomebrewPath(), ["install", homebrewFormulaFor(executable)], INSTALL_EXECA_OPTS);
               await installationToast.hide();
               onRefresh();
             } catch (error) {
@@ -302,13 +319,17 @@ function AutoInstall({ executable, onRefresh }: { executable: string; onRefresh:
               // and that must land in the error toast below — outside the try
               // it became an unhandled rejection and the user saw nothing.
               const wingetPath = await getWingetPath();
-              await execa(wingetPath, [
-                "install",
-                "--accept-source-agreements",
-                "--accept-package-agreements",
-                `--id=${wingetIdFor(executable)}`,
-                "-e",
-              ]);
+              await execa(
+                wingetPath,
+                [
+                  "install",
+                  "--accept-source-agreements",
+                  "--accept-package-agreements",
+                  `--id=${wingetIdFor(executable)}`,
+                  "-e",
+                ],
+                INSTALL_EXECA_OPTS,
+              );
               await installationToast.hide();
               // Bust the winget Packages listing cache so the next
               // resolveBinary sees the just-installed package — without
@@ -376,6 +397,9 @@ function AutoInstall({ executable, onRefresh }: { executable: string; onRefresh:
           }}
         />
       )}
+      {/* Always rendered so `isLoading` never leaves the panel empty during a
+          long or wedged install — the user keeps an exit to preferences. */}
+      <Action title="Open Extension Preferences" icon={Icon.Cog} onAction={openExtensionPreferences} />
     </ActionPanel>
   );
 }

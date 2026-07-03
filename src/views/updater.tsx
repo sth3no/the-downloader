@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import fs from "node:fs";
+import path from "node:path";
 import { Action, ActionPanel, Clipboard, Detail, Icon, Toast, environment, useNavigation } from "@raycast/api";
 import { execa } from "execa";
 import { getHomebrewPath, getSpotdlPath, getWingetPath, isMac, isWindows } from "../utils.js";
@@ -7,8 +8,27 @@ import { downloadSpotdl, getInstalledVersion, getLatestRelease } from "../lib/ma
 import { friendlyNameFor, HOMEBREW_FORMULAE, isWingetUpdateNotApplicable, WINGET_PACKAGES } from "../lib/tools.js";
 import { resetWingetPackagesCache } from "../lib/binary.js";
 
+/**
+ * Bound every package-manager spawn. execa defaults to no timeout, so a wedged
+ * `brew`/`winget` (blocked on a lock, or awaiting a prompt on its piped stdin)
+ * would leave the "Checking versions…" / "Upgrading…" toast spinning forever
+ * with no way out. Version and list probes are quick, so they get a tight cap;
+ * installs/upgrades of heavy formulae legitimately run for minutes. `stdin:
+ * "ignore"` detaches the default stdin pipe so a child can't block on an
+ * interactive prompt (sudo, a license agreement) that never arrives.
+ */
+const CHECK_EXECA_OPTS = { timeout: 30_000, stdin: "ignore" } as const;
+const UPGRADE_EXECA_OPTS = { timeout: 600_000, stdin: "ignore" } as const;
+
 type PackageIssue = { pkg: string; message: string };
-type CheckResult = { versions: Record<string, string>; outdated: Record<string, string>; checkIssues: PackageIssue[] };
+type CheckResult = {
+  versions: Record<string, string>;
+  outdated: Record<string, string>;
+  checkIssues: PackageIssue[];
+  // True when spotDL resolves to a non-managed install (e.g. a Homebrew build) —
+  // the managed GitHub-release upgrade must not be offered for it (see getOutdated).
+  spotdlExternal: boolean;
+};
 
 export default function Updater() {
   const { pop } = useNavigation();
@@ -19,35 +39,61 @@ export default function Updater() {
   const [checkIssues, setCheckIssues] = useState<PackageIssue[]>([]);
   const [upgradeIssues, setUpgradeIssues] = useState<PackageIssue[]>([]);
   const [upgradingMessage, setUpgradingMessage] = useState<string>("");
+  const [spotdlExternal, setSpotdlExternal] = useState(false);
+  // Set right before an upgrade clears `upgradingMessage`, which re-fires the
+  // check effect below. When set, that recheck refreshes the version list
+  // WITHOUT popping its own "Checking versions…" toast — otherwise the animated
+  // toast would instantly clobber the just-shown "Upgrade complete" outcome.
+  const skipNextCheckToast = useRef(false);
 
   const allUpToDate = Object.values(outdated).every((version) => !version);
 
   useEffect(() => {
     if (upgradingMessage) return;
-    const toast = new Toast({ style: Toast.Style.Animated, title: "Checking versions..." });
-    toast.show();
+    let cancelled = false;
+
+    // Suppress the animated toast when this run is the post-upgrade recheck, so
+    // it can't replace the upgrade outcome toast that's already on screen.
+    const silent = skipNextCheckToast.current;
+    skipNextCheckToast.current = false;
+    const toast = silent ? undefined : new Toast({ style: Toast.Style.Animated, title: "Checking versions..." });
+    toast?.show();
 
     check()
-      .then(({ versions, outdated, checkIssues }) => {
-        toast.hide();
-        setVersions(versions);
-        setOutdated(outdated);
-        setCheckIssues(checkIssues);
+      .then((result) => {
+        if (cancelled) return;
+        toast?.hide();
+        setVersions(result.versions);
+        setOutdated(result.outdated);
+        setCheckIssues(result.checkIssues);
+        setSpotdlExternal(result.spotdlExternal);
       })
       .catch((error) => {
+        if (cancelled) return;
         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-        toast.style = Toast.Style.Failure;
-        toast.title = "Failed to check versions";
-        toast.message = errorMessage;
+        // On a silent recheck there is no animated toast to convert, so spin up
+        // a fresh failure toast; otherwise reuse the "Checking versions…" one.
+        const failureToast = toast ?? new Toast({ style: Toast.Style.Failure, title: "Failed to check versions" });
+        failureToast.style = Toast.Style.Failure;
+        failureToast.title = "Failed to check versions";
+        failureToast.message = errorMessage;
         if (error instanceof Error) {
-          toast.primaryAction = {
+          failureToast.primaryAction = {
             title: "Copy to Clipboard",
             onAction: () => {
               Clipboard.copy(errorMessage);
             },
           };
         }
+        if (!toast) failureToast.show();
       });
+
+    // Popping back mid-check must not leave the animated toast up until the
+    // promise settles, nor apply its results to an unmounted view.
+    return () => {
+      cancelled = true;
+      toast?.hide();
+    };
   }, [upgradingMessage]);
 
   const versionRows = Object.entries(versions)
@@ -57,6 +103,9 @@ export default function Updater() {
       if (checkIssue) status = `(check failed: ${truncate(checkIssue.message, 80)})`;
       else if (version === "not installed") status = "";
       else if (outdated[cli]) status = `(outdated: ${outdated[cli]})`;
+      // A non-managed spotDL (e.g. a Homebrew build) is deliberately not checked
+      // against GitHub releases, so label it rather than imply "(up to date)".
+      else if (cli === "spotdl" && spotdlExternal) status = "(externally managed)";
       else status = "(up to date)";
       const versionText = version === "" && !checkIssue ? "Checking..." : version || "—";
       return `${friendlyNameFor(cli)}: ${versionText}${status ? ` ${status}` : ""}`;
@@ -121,6 +170,10 @@ export default function Updater() {
                     };
                   }
                 } finally {
+                  // Let the outcome toast set above survive: the check effect
+                  // re-fires when upgradingMessage clears, and without this it
+                  // would immediately cover it with "Checking versions…".
+                  skipNextCheckToast.current = true;
                   setUpgradingMessage("");
                 }
               }}
@@ -164,11 +217,10 @@ function extractSemver(version: string): string {
 }
 
 async function check(): Promise<CheckResult> {
-  const [{ versions, issues: versionIssues }, { outdated, issues: outdatedIssues }] = await Promise.all([
-    getVersions(),
-    getOutdated(),
-  ]);
-  return { versions, outdated, checkIssues: [...versionIssues, ...outdatedIssues] };
+  const [{ versions, issues: versionIssues }, { outdated, issues: outdatedIssues, spotdlExternal }] = await Promise.all(
+    [getVersions(), getOutdated()],
+  );
+  return { versions, outdated, checkIssues: [...versionIssues, ...outdatedIssues], spotdlExternal };
 }
 
 async function getSpotdlVersion(): Promise<string> {
@@ -186,7 +238,11 @@ async function getVersions(): Promise<{ versions: Record<string, string>; issues
   const issues: PackageIssue[] = [];
   if (isMac) {
     try {
-      const { stdout: infoOutput } = await execa(getHomebrewPath(), ["info", "--json=v2", ...HOMEBREW_FORMULAE]);
+      const { stdout: infoOutput } = await execa(
+        getHomebrewPath(),
+        ["info", "--json=v2", ...HOMEBREW_FORMULAE],
+        CHECK_EXECA_OPTS,
+      );
       // Report the INSTALLED version (`installed`, newest keg last) — NOT
       // `versions.stable`, which is the latest version in the formula
       // definition. The old code displayed `stable`, so a tool that was never
@@ -206,7 +262,7 @@ async function getVersions(): Promise<{ versions: Record<string, string>; issues
       const wingetPath = await getWingetPath();
       for (const pkg of WINGET_PACKAGES) {
         try {
-          const { stdout } = await execa(wingetPath, ["list", "--id", pkg, "--exact"]);
+          const { stdout } = await execa(wingetPath, ["list", "--id", pkg, "--exact"], CHECK_EXECA_OPTS);
           versions[pkg] = parseWingetVersion(stdout, pkg);
         } catch (error) {
           versions[pkg] = "";
@@ -235,9 +291,14 @@ function parseWingetVersion(output: string, packageId: string): string {
   return "";
 }
 
-async function getOutdated(): Promise<{ outdated: Record<string, string>; issues: PackageIssue[] }> {
+async function getOutdated(): Promise<{
+  outdated: Record<string, string>;
+  issues: PackageIssue[];
+  spotdlExternal: boolean;
+}> {
   const outdated: Record<string, string> = {};
   const issues: PackageIssue[] = [];
+  let spotdlExternal = false;
   if (isMac) {
     try {
       // No explicit formula names: `brew outdated <name>` errors out for a
@@ -245,7 +306,7 @@ async function getOutdated(): Promise<{ outdated: Record<string, string>; issues
       // a webpage), failing the whole batch. List everything outdated on the
       // system instead and filter to our formulae. `current_version` is the
       // newest version available for the (installed, outdated) formula.
-      const { stdout: outdatedOutput } = await execa(getHomebrewPath(), ["outdated", "--json=v2"]);
+      const { stdout: outdatedOutput } = await execa(getHomebrewPath(), ["outdated", "--json=v2"], CHECK_EXECA_OPTS);
       const info = JSON.parse(outdatedOutput) as { formulae: { name: string; current_version: string }[] };
       for (const { name, current_version } of info.formulae) {
         if (HOMEBREW_FORMULAE.includes(name)) outdated[name] = current_version;
@@ -256,7 +317,7 @@ async function getOutdated(): Promise<{ outdated: Record<string, string>; issues
   } else if (isWindows) {
     try {
       const wingetPath = await getWingetPath();
-      const { stdout: upgradeOutput } = await execa(wingetPath, ["upgrade"]);
+      const { stdout: upgradeOutput } = await execa(wingetPath, ["upgrade"], CHECK_EXECA_OPTS);
       for (const line of upgradeOutput.split("\n")) {
         for (const pkg of WINGET_PACKAGES) {
           if (line.includes(pkg)) {
@@ -273,7 +334,19 @@ async function getOutdated(): Promise<{ outdated: Record<string, string>; issues
   }
   try {
     const spotdlPath = getSpotdlPath();
-    if (fs.existsSync(spotdlPath)) {
+    // Only the MANAGED spotDL is compared against GitHub releases. getSpotdlPath()
+    // can resolve a Homebrew-installed native (arm64) build, which lags the GitHub
+    // cadence — flagging that as outdated and running the managed "Upgrade" would
+    // drop the x86_64 prebuilt into supportPath, which resolveBinary then PREFERS
+    // over the brew install (see binary.ts precedence), silently swapping the
+    // user's deliberate native install for a Rosetta-dependent one. A non-managed
+    // install is surfaced as externally managed and left to its own package
+    // manager. Mirror resolveBinary's managed-path construction (path.posix.join,
+    // ".exe" on Windows) so the equality check matches what getSpotdlPath returns.
+    const managedSpotdlPath = path.posix.join(environment.supportPath, isWindows ? "spotdl.exe" : "spotdl");
+    const installedOnDisk = fs.existsSync(spotdlPath);
+    spotdlExternal = installedOnDisk && spotdlPath !== managedSpotdlPath;
+    if (installedOnDisk && !spotdlExternal) {
       const installed = extractSemver(await getInstalledVersion(spotdlPath));
       const latest = extractSemver((await getLatestRelease()).version);
       if (installed && latest && installed !== latest) {
@@ -283,7 +356,7 @@ async function getOutdated(): Promise<{ outdated: Record<string, string>; issues
   } catch (error) {
     issues.push({ pkg: "spotdl", message: errorMessageOf(error) });
   }
-  return { outdated, issues };
+  return { outdated, issues, spotdlExternal };
 }
 
 /**
@@ -302,7 +375,7 @@ async function upgrade(outdated: Record<string, string>): Promise<{ issues: Pack
       if (!outdated[formula]) continue;
       attempted += 1;
       try {
-        await execa(brew, ["upgrade", formula]);
+        await execa(brew, ["upgrade", formula], UPGRADE_EXECA_OPTS);
       } catch (error) {
         issues.push({ pkg: formula, message: errorMessageOf(error) });
       }
@@ -313,7 +386,11 @@ async function upgrade(outdated: Record<string, string>): Promise<{ issues: Pack
       if (!outdated[pkg]) continue;
       attempted += 1;
       try {
-        await execa(wingetPath, ["upgrade", "--id", pkg, "--accept-source-agreements", "--accept-package-agreements"]);
+        await execa(
+          wingetPath,
+          ["upgrade", "--id", pkg, "--accept-source-agreements", "--accept-package-agreements"],
+          UPGRADE_EXECA_OPTS,
+        );
       } catch (error) {
         // winget exits non-zero when a package has no available upgrade (it
         // may have been upgraded since the check) — not a real failure.

@@ -105,6 +105,9 @@ function failToast(toast: Toast, error: unknown) {
     toast.style = Toast.Style.Failure;
     toast.title = "spotDL needs Rosetta 2";
     toast.message = error.message;
+    // Parity with fast-download.ts: the message carries the exact
+    // `softwareupdate --install-rosetta` command, so let the user copy it.
+    toast.primaryAction = { title: "Copy Error", onAction: () => Clipboard.copy(error.message) };
     return;
   }
   if (error instanceof SpotdlDownloadError) {
@@ -201,7 +204,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
 
   // yt-dlp metadata — fetched only for a yt-dlp-bound selection with its tools present.
   const shouldFetchMeta = ytdlpBound && validUrl && !missingTool;
-  const { data: video, isLoading: metaLoading } = usePromise(
+  const { data: fetchedVideo, isLoading: metaLoading } = usePromise(
     async (u: string, fetchIt: boolean) => {
       if (!fetchIt) return undefined;
       const denoPath = getDenoPath();
@@ -215,11 +218,24 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
           timeoutMs: getIdleTimeoutMs(),
         },
       );
-      return { ...data, title: sanitizeVideoTitle(data.title) };
+      // Tag the result with the URL it was fetched for. usePromise keeps the
+      // PREVIOUS url's `data` while a new url's fetch is in flight (it only
+      // flips isLoading), so consumers need this to tell whether the metadata on
+      // hand actually describes the URL currently in the field.
+      return { forUrl: u, ...data, title: sanitizeVideoTitle(data.title) };
     },
     [url, shouldFetchMeta],
     { onError: () => undefined, abortable: metaAbortable },
   );
+
+  // The "effective" video: the fetched metadata, but only while it still matches
+  // the URL in the field. During an in-flight refetch `fetchedVideo` holds the
+  // prior URL's data — consuming it would paint the old title, list the old
+  // video's format IDs in Exact Format (a quick submit would send the wrong
+  // --format to a different video), and let a stale "live" flag block a valid
+  // new URL. Comparing normalized forms so the https:// the submit path prepends
+  // never reads as a spurious mismatch.
+  const video = fetchedVideo && normalizeUrl(fetchedVideo.forUrl) === normalizeUrl(url) ? fetchedVideo : undefined;
 
   const liveStream = !!video && isLiveStream(video);
 
@@ -342,7 +358,14 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
     }
 
     if (ft === "image" && src === "gallery") {
-      const browser = resolveBrowser(prefs.cookiesFromBrowser, prefs.cookiesFromBrowserCustom);
+      // Read the cookie prefs fresh on submit so a "Cookies from Browser" value
+      // set (or changed) while this form is open is picked up without
+      // re-launching the command. Otherwise a "Login Required" failure loops:
+      // the toast's action opens preferences, the user sets the browser, hits
+      // resubmit in the still-open form, and the stale module-level pref fails
+      // again. Mirrors the Spotify branch's live re-read below.
+      const livePrefs = getPreferenceValues<ExtensionPreferences>();
+      const browser = resolveBrowser(livePrefs.cookiesFromBrowser, livePrefs.cookiesFromBrowserCustom);
       const toast = await showToast({ style: Toast.Style.Animated, title: "Downloading Gallery", message: "0 files" });
 
       if (browser.warning) {
