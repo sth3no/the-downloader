@@ -95,6 +95,7 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
   const {
     cookiesFromBrowser,
     cookiesFromBrowserCustom,
+    forceIpv4,
     spotifyAudioFormat,
     spotifyClientId,
     spotifyClientSecret,
@@ -314,14 +315,33 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
     container: config.videoContainer,
     audioFormat: config.audioFormat,
   });
-  const outputTemplate = path.join(downloadPath, "%(title)s (%(id)s).%(ext)s");
+  // Destination goes via `-P` and the filename via a relative `-o` template
+  // (see buildVideoDownloadArgs), so a download folder containing a literal `%`
+  // no longer breaks yt-dlp's output template.
+  const outputTemplate = "%(title)s (%(id)s).%(ext)s";
 
-  const toast = await showToast({ style: Toast.Style.Animated, title: "Downloading Video", message: "0%" });
+  const toast = await showToast({
+    style: Toast.Style.Animated,
+    // The composed format is audio-only when videoMediaType is "audio"; name the
+    // toast for what's actually being fetched.
+    title: config.videoMediaType === "audio" ? "Downloading Audio" : "Downloading Video",
+    message: "0%",
+  });
   const { signal } = attachStop(toast);
   try {
     const { filePath } = await runVideoDownload(
       ytdlPath,
-      { url, format, outputTemplate, ffmpegPath, denoPath: deno, idleMs: getIdleTimeoutMs(), abortSignal: signal },
+      {
+        url,
+        format,
+        destination: downloadPath,
+        outputTemplate,
+        ffmpegPath,
+        denoPath: deno,
+        forceIpv4,
+        idleMs: getIdleTimeoutMs(),
+        abortSignal: signal,
+      },
       (percent) => {
         toast.message = `${Math.floor(percent)}%`;
       },

@@ -51,11 +51,16 @@ describe("resolveTool", () => {
 });
 
 describe("requiredTools", () => {
-  it("video needs the full yt-dlp toolchain", () => {
-    expect(requiredTools("video", "video")).toEqual(["yt-dlp", "ffmpeg", "ffprobe", "deno"]);
+  it("video needs yt-dlp + ffmpeg + ffprobe, but NOT deno (deno is optional, not a hard gate)", () => {
+    expect(requiredTools("video", "video")).toEqual(["yt-dlp", "ffmpeg", "ffprobe"]);
   });
-  it("audio on a video site needs the full yt-dlp toolchain", () => {
-    expect(requiredTools("video", "audio")).toEqual(["yt-dlp", "ffmpeg", "ffprobe", "deno"]);
+  it("audio on a video site needs yt-dlp + ffmpeg + ffprobe, but NOT deno", () => {
+    expect(requiredTools("video", "audio")).toEqual(["yt-dlp", "ffmpeg", "ffprobe"]);
+  });
+  it("never hard-gates on deno (Twitch/Vimeo/TikTok don't need a JS runtime)", () => {
+    for (const ft of supportedFiletypes("video")) {
+      expect(requiredTools("video", ft)).not.toContain("deno");
+    }
   });
   it("audio on a Spotify source needs spotdl + ffmpeg", () => {
     expect(requiredTools("spotify", "audio")).toEqual(["spotdl", "ffmpeg"]);

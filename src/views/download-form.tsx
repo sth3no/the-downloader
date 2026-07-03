@@ -407,7 +407,11 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       try {
         const { filePath } = await runThumbnailDownload(getytdlPath(), {
           url: submitUrl,
-          outputTemplate: path.join(folder, "%(title)s (%(id)s).%(ext)s"),
+          // Folder via `-P`, filename via a relative `-o` template, so a folder
+          // with a literal `%` doesn't break yt-dlp's output template.
+          destination: folder,
+          outputTemplate: "%(title)s (%(id)s).%(ext)s",
+          forceIpv4: prefs.forceIpv4,
           idleMs: getIdleTimeoutMs(),
           abortSignal: signal,
         });
@@ -527,9 +531,13 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         {
           url: submitUrl,
           format,
-          outputTemplate: path.join(folder, "%(title)s (%(id)s).%(ext)s"),
+          // Folder via `-P`, filename via a relative `-o` template, so a folder
+          // with a literal `%` doesn't break yt-dlp's output template.
+          destination: folder,
+          outputTemplate: "%(title)s (%(id)s).%(ext)s",
           ffmpegPath: getffmpegPath(),
           denoPath: fs.existsSync(denoPath) ? denoPath : undefined,
+          forceIpv4: prefs.forceIpv4,
           idleMs: getIdleTimeoutMs(),
           abortSignal: signal,
         },

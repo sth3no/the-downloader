@@ -78,14 +78,23 @@ export function filetypeGuidance(source: SourceType): string {
   }
 }
 
-/** Every executable that must exist for a (source, filetype) selection. */
+/**
+ * Every executable that must exist for a (source, filetype) selection.
+ *
+ * Deno is deliberately NOT required for video/audio. yt-dlp only needs it as a
+ * JS runtime for some extractors (notably YouTube), and plenty of supported
+ * sites (Twitch, Vimeo, TikTok, …) don't need a JS runtime at all — hard-gating
+ * on Deno would trap those behind an installer screen. The video/audio paths
+ * (form, fast-download, download-video tool) instead pass Deno only when it is
+ * present. Deno stays installable via the Update Libraries / Installer flow
+ * (it's still in `TOOLS`), which improves YouTube reliability; it just isn't a
+ * blocking requirement here.
+ */
 export function requiredTools(source: SourceType, filetype: Filetype): string[] {
   const tool = resolveTool(source, filetype);
   if (tool === "monolith") return ["monolith"];
   if (tool === "spotdl") return ["spotdl", "ffmpeg"];
   if (tool === "gallery-dl") return ["gallery-dl"];
   // tool === "yt-dlp" — transcript and thumbnail need only yt-dlp + ffmpeg.
-  return filetype === "transcript" || filetype === "image"
-    ? ["yt-dlp", "ffmpeg"]
-    : ["yt-dlp", "ffmpeg", "ffprobe", "deno"];
+  return filetype === "transcript" || filetype === "image" ? ["yt-dlp", "ffmpeg"] : ["yt-dlp", "ffmpeg", "ffprobe"];
 }

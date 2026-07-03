@@ -69,6 +69,9 @@ export default async function extractTranscript(url: string, language: string = 
       "--write-auto-sub", // Write automatically generated subtitles
       "--skip-download", // Don't download the video
       "--no-playlist", // A watch?v=…&list=… URL must not fetch the whole playlist's subs
+      // Match the metadata probe (fetchVideoInfo already forces IPv4): without
+      // it the subtitle fetch could stall on a broken IPv6 route the probe avoided.
+      ...(forceIpv4 ? ["--force-ipv4"] : []),
       // Match regional / auto-caption variants: yt-dlp matches sub langs by an
       // anchored regex, so a bare `en` misses en-US / en-GB / en-orig. The
       // `<lang>.*` form catches them; the exact form keeps priority obvious.
