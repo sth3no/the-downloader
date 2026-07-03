@@ -1,4 +1,5 @@
 import { spawn, ChildProcess } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 
 /**
  * Default watchdog idle window. Real downloads emit progress lines well within
@@ -78,6 +79,14 @@ export function runWithWatchdog(binary: string, args: string[], options: RunOpti
     let stdout = "";
     let stderr = "";
     let stdoutLineBuffer = "";
+    // One StringDecoder per stream so a chunk boundary landing mid-codepoint (a
+    // multi-byte UTF-8 char split across two 'data' events) is reassembled
+    // instead of turned into U+FFFD. Buffer.toString() per chunk can't do this —
+    // it decodes each chunk in isolation, so a non-ASCII title in the tagged
+    // `THE-DOWNLOADER-FILEPATH:` line would corrupt and point the toast's file
+    // actions at a path that doesn't exist.
+    const stdoutDecoder = new StringDecoder("utf8");
+    const stderrDecoder = new StringDecoder("utf8");
     let settled = false;
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let killTimer: ReturnType<typeof setTimeout> | undefined;
@@ -103,10 +112,15 @@ export function runWithWatchdog(binary: string, args: string[], options: RunOpti
       reject(error);
     };
 
-    // Signal the child's whole process group on POSIX (negative pid) so
-    // grandchildren — yt-dlp's ffmpeg post-processor — die with it instead of
-    // orphaning. Falls back to a direct child kill when there's no group
-    // (Windows) or the group has already gone. No signal → SIGTERM.
+    // Tear down the child and everything it spawned. On POSIX the child leads
+    // its own process group, so signalling the negative pid reaches
+    // grandchildren — yt-dlp's ffmpeg post-processor — instead of orphaning
+    // them. Windows has no process groups and child.kill() (TerminateProcess)
+    // hits only the direct child, so a kill mid-postprocess would leave ffmpeg
+    // running and holding the output file; `taskkill /T /F` walks the whole
+    // tree and hard-kills it. If taskkill can't be spawned we fall back to a
+    // direct child kill. No signal → SIGTERM (POSIX); taskkill /F is always a
+    // hard kill, so it takes no signal.
     const killGroup = (signal?: NodeJS.Signals) => {
       const pid = child.pid;
       if (isPosix && typeof pid === "number") {
@@ -116,6 +130,23 @@ export function runWithWatchdog(binary: string, args: string[], options: RunOpti
           return;
         } catch {
           /* group already gone — fall through to a direct child kill */
+        }
+      } else if (!isPosix && typeof pid === "number") {
+        try {
+          // Spawn taskkill directly (no shell) so the pid can't be
+          // reinterpreted. If it can't even start (e.g. ENOENT), the async
+          // 'error' event drops us to the direct child kill below.
+          const killer = spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+          killer.on("error", () => {
+            try {
+              child.kill();
+            } catch {
+              /* child may already be dead */
+            }
+          });
+          return;
+        } catch {
+          /* taskkill couldn't be spawned synchronously — fall through */
         }
       }
       try {
@@ -130,10 +161,15 @@ export function runWithWatchdog(binary: string, args: string[], options: RunOpti
       if (settled || termination) return;
       termination = reason;
       if (idleTimer) clearTimeout(idleTimer);
-      // Escalate to SIGKILL if the child ignores SIGTERM, so `close` is
-      // guaranteed to fire and the promise can settle. Set the timer before
-      // the first signal so a synchronous close (in tests) can clear it.
-      killTimer = setTimeout(() => killGroup("SIGKILL"), KILL_GRACE_MS);
+      // On POSIX, escalate to SIGKILL if the child ignores SIGTERM, so `close`
+      // is guaranteed to fire and the promise can settle. Set the timer before
+      // the first signal so a synchronous close (in tests) can clear it. On
+      // Windows there is nothing to escalate to — killGroup uses `taskkill /F`,
+      // an unconditional hard kill — so scheduling a second pass would only
+      // spawn a redundant taskkill against an already-dead pid.
+      if (isPosix) {
+        killTimer = setTimeout(() => killGroup("SIGKILL"), KILL_GRACE_MS);
+      }
       killGroup();
     };
 
@@ -149,7 +185,7 @@ export function runWithWatchdog(binary: string, args: string[], options: RunOpti
 
     child.stdout?.on("data", (data: Buffer) => {
       resetIdle();
-      const text = data.toString();
+      const text = stdoutDecoder.write(data);
       stdout += text;
       options.onStdoutChunk?.(text);
       if (options.onStdoutLine) {
@@ -165,7 +201,7 @@ export function runWithWatchdog(binary: string, args: string[], options: RunOpti
     });
     child.stderr?.on("data", (data: Buffer) => {
       resetIdle();
-      const text = data.toString();
+      const text = stderrDecoder.write(data);
       stderr += text;
       options.onStderrChunk?.(text);
     });

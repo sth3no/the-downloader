@@ -112,6 +112,46 @@ describe("invalidateSpotipyCacheIfStale", () => {
     expect(() => invalidateSpotipyCacheIfStale(SUPPORT, "id", "sec", false, HOME)).not.toThrow();
   });
 
+  it("still advances the fingerprint when the cache file was simply absent (ENOENT counts as cleared, not a failure)", () => {
+    // No clearAllMocks in this file's afterEach, so clear the mock we assert on.
+    vi.mocked(fs.writeFileSync).mockClear();
+    vi.mocked(fs.readFileSync).mockImplementation(() => {
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    });
+    vi.mocked(fs.unlinkSync).mockImplementation(() => {
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    });
+
+    invalidateSpotipyCacheIfStale(SUPPORT, "id", "sec", false, HOME);
+
+    // Nothing stale was left behind, so the fingerprint records the new creds.
+    expect(fs.writeFileSync).toHaveBeenCalledWith(FINGERPRINT, expect.any(String));
+  });
+
+  it("does NOT advance the fingerprint when a cache file can't be deleted for a real reason (EPERM), so the next run retries", () => {
+    // This file's afterEach only restoreAllMocks (no clearAllMocks), so call
+    // history from earlier specs leaks; clear the fs mocks we assert on.
+    vi.mocked(fs.unlinkSync).mockClear();
+    vi.mocked(fs.writeFileSync).mockClear();
+    vi.mocked(fs.readFileSync).mockImplementation(() => {
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    });
+    // CACHE_A is locked (EPERM); the wipe genuinely failed for that path.
+    vi.mocked(fs.unlinkSync).mockImplementation((p) => {
+      if (p === CACHE_A) throw Object.assign(new Error("EPERM"), { code: "EPERM" });
+      return undefined;
+    });
+
+    invalidateSpotipyCacheIfStale(SUPPORT, "id", "sec", false, HOME);
+
+    // Both paths are still attempted...
+    expect(fs.unlinkSync).toHaveBeenCalledWith(CACHE_A);
+    expect(fs.unlinkSync).toHaveBeenCalledWith(CACHE_B);
+    // ...but the fingerprint must NOT advance, or the stale-token bug would
+    // silently persist and never be retried.
+    expect(fs.writeFileSync).not.toHaveBeenCalled();
+  });
+
   it("swallows fingerprint-write errors so a read-only supportDir never blocks a download", () => {
     vi.mocked(fs.readFileSync).mockImplementation(() => {
       throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });

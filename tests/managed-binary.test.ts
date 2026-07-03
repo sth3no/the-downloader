@@ -14,8 +14,10 @@ vi.mock("execa", () => ({ execa: vi.fn(async () => ({ stdout: "" })) }));
 
 import * as fs from "node:fs";
 import * as crypto from "node:crypto";
+import { execa } from "execa";
 import {
   downloadSpotdl,
+  getInstalledVersion,
   isAppleSilicon,
   isRosettaInstalled,
   resolveSpotdlAsset,
@@ -86,8 +88,10 @@ describe("downloadSpotdl integrity verification", () => {
   const goodDigest = "sha256:" + crypto.createHash("sha256").update(bytes).digest("hex");
   const DOWNLOAD_URL = "https://github.com/spotDL/spotify-downloader/releases/download/v4.5.0/spotdl-4.5.0-darwin";
 
-  function stubFetch(opts: { digest?: string; downloadUrl?: string }) {
+  function stubFetch(opts: { digest?: string; downloadUrl?: string; finalUrl?: string }) {
     const downloadUrl = opts.downloadUrl ?? DOWNLOAD_URL;
+    // undici sets res.url to the post-redirect URL; default to no redirect.
+    const finalUrl = opts.finalUrl ?? downloadUrl;
     const fetchSpy = vi.fn(async (url: string) => {
       if (url.includes("api.github.com")) {
         return {
@@ -98,7 +102,7 @@ describe("downloadSpotdl integrity verification", () => {
           }),
         };
       }
-      return { ok: true, arrayBuffer: async () => new Uint8Array(bytes).buffer };
+      return { ok: true, url: finalUrl, arrayBuffer: async () => new Uint8Array(bytes).buffer };
     });
     vi.stubGlobal("fetch", fetchSpy);
     return fetchSpy;
@@ -141,6 +145,41 @@ describe("downloadSpotdl integrity verification", () => {
     await expect(downloadSpotdl("/tmp/support")).rejects.toThrow(/unexpected host/i);
     // Only the releases-API fetch ran; the asset download did not.
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("proceeds when a redirect lands on GitHub's asset CDN (post-redirect host is on the allowlist)", async () => {
+    // The requested URL is on github.com (initial check passes); GitHub then
+    // 302s to its CDN — undici reports that as res.url.
+    stubFetch({
+      digest: goodDigest,
+      finalUrl: "https://release-assets.githubusercontent.com/github-production-release-asset/spotdl-4.5.0-darwin",
+    });
+    const p = await downloadSpotdl("/tmp/support");
+    expect(p).toContain("spotdl");
+    expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalled();
+  });
+
+  it("refuses when a redirect lands the download on an unexpected host (final URL validated AFTER the fetch, not just the requested URL)", async () => {
+    // Initial host is github.com (passes the pre-fetch check); the redirect
+    // target is hostile. Without the post-fetch check the bytes would be used.
+    const fetchSpy = stubFetch({ digest: goodDigest, finalUrl: "https://evil.example.com/spotdl-4.5.0-darwin" });
+    await expect(downloadSpotdl("/tmp/support")).rejects.toThrow(/unexpected host/i);
+    // Both fetches ran (releases API + the asset), but no bytes were written.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fs.writeFileSync)).not.toHaveBeenCalled();
+  });
+});
+
+describe("getInstalledVersion", () => {
+  it("runs the version probe bounded by a timeout with stdin detached, so a wedged binary can't hang the Updater", async () => {
+    vi.mocked(execa).mockResolvedValueOnce({ stdout: "spotDL 4.5.0" } as never);
+    const version = await getInstalledVersion("/support/spotdl");
+    expect(version).toBe("4.5.0");
+    expect(vi.mocked(execa)).toHaveBeenCalledWith(
+      "/support/spotdl",
+      ["--version"],
+      expect.objectContaining({ timeout: 15_000, stdin: "ignore" }),
+    );
   });
 });
 

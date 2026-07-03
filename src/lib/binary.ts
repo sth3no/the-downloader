@@ -137,7 +137,11 @@ function findWindowsBinary(name: string, env: NodeJS.ProcessEnv): string {
  */
 export function resolveBinary(name: string, preferencePath?: string, managedDir?: string): string {
   const platform = process.platform;
-  const pref = platform === "win32" ? preferencePath?.replace(/[\r\n]/g, "").trim() : preferencePath;
+  // Strip CR/LF and surrounding whitespace on every platform: Raycast text
+  // fields sometimes paste a path with a trailing space or newline, and an
+  // untrimmed value fails existsSync and silently falls through to the search
+  // dirs — ignoring the user's configured binary. This was previously win32-only.
+  const pref = preferencePath?.replace(/[\r\n]/g, "").trim();
   if (pref && fs.existsSync(pref)) return pref;
   // `path.posix.join` keeps test output deterministic across host platforms
   // (a Mac-mocking test running on Windows would otherwise see `\` separators).

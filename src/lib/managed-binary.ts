@@ -18,8 +18,17 @@ const USER_AGENT = "the-downloader-raycast";
 const RELEASE_LOOKUP_TIMEOUT_MS = 30_000;
 const BINARY_DOWNLOAD_TIMEOUT_MS = 600_000;
 
-/** Hosts the spotDL binary may be downloaded from — GitHub and its asset CDN. */
-const ALLOWED_DOWNLOAD_HOSTS = new Set(["github.com", "objects.githubusercontent.com"]);
+/**
+ * Hosts the spotDL binary may be downloaded from — GitHub and the asset CDNs it
+ * redirects release-asset downloads to. `github.com/.../releases/download/...`
+ * always 302s to one of the githubusercontent CDN hosts, so both the requested
+ * host and the post-redirect host are validated against this set.
+ */
+const ALLOWED_DOWNLOAD_HOSTS = new Set([
+  "github.com",
+  "objects.githubusercontent.com",
+  "release-assets.githubusercontent.com",
+]);
 
 export type ReleaseAsset = { name: string; url: string; digest?: string };
 export type SpotdlRelease = { version: string; assets: ReleaseAsset[] };
@@ -115,7 +124,10 @@ export async function downloadSpotdl(supportDir: string): Promise<string> {
   const asset = resolveSpotdlAsset(process.platform, release.assets);
 
   // The asset URL comes from the releases API; pin it to GitHub's own hosts so
-  // a redirected/rewritten URL can't point the download at an attacker host.
+  // a rewritten URL can't point the download at an attacker host. This checks
+  // only the URL we're about to request — fetch transparently follows redirects
+  // (GitHub always 302s release assets to its CDN), so the post-redirect host is
+  // validated separately once the response resolves, below.
   const host = new URL(asset.url).host;
   if (!ALLOWED_DOWNLOAD_HOSTS.has(host)) {
     throw new Error(`Refusing to download spotDL from an unexpected host: ${host}`);
@@ -131,6 +143,13 @@ export async function downloadSpotdl(supportDir: string): Promise<string> {
     });
     if (!res.ok) {
       throw new Error(`spotDL download failed (HTTP ${res.status})`);
+    }
+    // Re-validate the host after redirects: undici sets res.url to the final
+    // (post-redirect) URL, so this catches a redirect that lands the download on
+    // a host outside the allowlist before we ever touch the bytes.
+    const finalHost = new URL(res.url).host;
+    if (!ALLOWED_DOWNLOAD_HOSTS.has(finalHost)) {
+      throw new Error(`Refusing to download spotDL from an unexpected host: ${finalHost}`);
     }
     bytes = Buffer.from(await res.arrayBuffer());
   } catch (error) {
@@ -181,7 +200,10 @@ export async function downloadSpotdl(supportDir: string): Promise<string> {
 
 /** Read the installed spotDL version, e.g. "4.5.0". */
 export async function getInstalledVersion(spotdlPath: string): Promise<string> {
-  const { stdout } = await execa(spotdlPath, ["--version"]);
+  // Bound the probe and detach stdin: a wedged binary (or one that blocks on an
+  // interactive prompt) would otherwise hang the Updater's "Checking versions…"
+  // toast forever with no way out.
+  const { stdout } = await execa(spotdlPath, ["--version"], { timeout: 15_000, stdin: "ignore" });
   const match = stdout.match(/\d+\.\d+\.\d+/);
   return match ? match[0] : stdout.trim();
 }

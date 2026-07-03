@@ -131,6 +131,15 @@ describe("resolveBinary on macOS", () => {
     vi.mocked(fs.existsSync).mockImplementation((p) => p === "/usr/local/bin/yt-dlp");
     expect(resolveBinary("yt-dlp", "/missing/yt-dlp")).toBe("/usr/local/bin/yt-dlp");
   });
+
+  it("strips stray CR/LF and surrounding whitespace from a preference path on macOS too (not just Windows)", () => {
+    // A path pasted into a Raycast textfield can arrive with a trailing newline
+    // or space; without trimming, existsSync misses and the configured binary
+    // is silently ignored in favour of the search dirs.
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/custom/bin/yt-dlp");
+    expect(resolveBinary("yt-dlp", "/custom/bin/yt-dlp\r\n")).toBe("/custom/bin/yt-dlp");
+    expect(resolveBinary("yt-dlp", "  /custom/bin/yt-dlp  ")).toBe("/custom/bin/yt-dlp");
+  });
 });
 
 describe("resolveBinary on Windows", () => {

@@ -99,13 +99,15 @@ describe("runWithWatchdog", () => {
     }
   });
 
-  it("on Windows, falls back to a direct child.kill() rather than signalling a process group", async () => {
+  it("on Windows, terminates the whole tree with `taskkill /T /F` rather than signalling a process group or killing only the direct child (which would orphan yt-dlp's ffmpeg)", async () => {
     setPlatform("win32");
     const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
     try {
       const child = fakeChild();
       (child as unknown as { pid: number }).pid = 4242;
-      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+      // First spawn() returns the child; the second is the taskkill invocation.
+      const taskkill = new EventEmitter();
+      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child).mockReturnValueOnce(taskkill);
 
       const controller = new AbortController();
       const promise = runWithWatchdog("C:/bin/x.exe", [], { idleMs: 60_000, abortSignal: controller.signal });
@@ -113,14 +115,86 @@ describe("runWithWatchdog", () => {
 
       child.stdout.emit("data", Buffer.from("running\n"));
       controller.abort();
+      // taskkill /F hard-kills the tree; model the child going down with it.
+      child.emit("close", null);
 
       await assertion;
       // process.kill (negative pid) is the POSIX-only path — must not be used on Windows.
       expect(killSpy).not.toHaveBeenCalled();
-      expect(child.kill).toHaveBeenCalled();
+      expect(spawn).toHaveBeenCalledWith(
+        "taskkill",
+        ["/pid", "4242", "/T", "/F"],
+        expect.objectContaining({ stdio: "ignore" }),
+      );
+      // Direct child.kill() is only the fallback for when taskkill can't be spawned.
+      expect(child.kill).not.toHaveBeenCalled();
     } finally {
       killSpy.mockRestore();
     }
+  });
+
+  it("on Windows, does NOT spawn a second taskkill after the grace period — `taskkill /F` is already a hard kill, so there's nothing to escalate to", async () => {
+    vi.useFakeTimers();
+    setPlatform("win32");
+    try {
+      const child = fakeChild();
+      (child as unknown as { pid: number }).pid = 4242;
+      const taskkill = new EventEmitter();
+      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child).mockReturnValueOnce(taskkill);
+
+      const controller = new AbortController();
+      const promise = runWithWatchdog("C:/bin/x.exe", [], { idleMs: 60_000, abortSignal: controller.signal });
+      const assertion = expect(promise).rejects.toBeInstanceOf(AbortError);
+
+      controller.abort();
+      child.emit("close", null);
+      await vi.advanceTimersByTimeAsync(10_000); // well past the POSIX grace period
+
+      await assertion;
+      // Exactly two spawns: the child, and one taskkill. No escalation pass.
+      const taskkillSpawns = (spawn as ReturnType<typeof vi.fn>).mock.calls.filter((c) => c[0] === "taskkill");
+      expect(taskkillSpawns).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("on Windows, falls back to a direct child.kill() when taskkill can't be spawned (synchronous throw)", async () => {
+    setPlatform("win32");
+    const child = fakeChild();
+    (child as unknown as { pid: number }).pid = 4242;
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child).mockImplementationOnce(() => {
+      throw new Error("spawn taskkill ENOENT");
+    });
+
+    const controller = new AbortController();
+    const promise = runWithWatchdog("C:/bin/x.exe", [], { idleMs: 60_000, abortSignal: controller.signal });
+    const assertion = expect(promise).rejects.toBeInstanceOf(AbortError);
+
+    child.stdout.emit("data", Buffer.from("running\n"));
+    controller.abort();
+
+    await assertion;
+    expect(child.kill).toHaveBeenCalled();
+  });
+
+  it("on Windows, falls back to a direct child.kill() when the taskkill process emits an 'error' (taskkill missing)", async () => {
+    setPlatform("win32");
+    const child = fakeChild();
+    (child as unknown as { pid: number }).pid = 4242;
+    const taskkill = new EventEmitter();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child).mockReturnValueOnce(taskkill);
+
+    const controller = new AbortController();
+    const promise = runWithWatchdog("C:/bin/x.exe", [], { idleMs: 60_000, abortSignal: controller.signal });
+    const assertion = expect(promise).rejects.toBeInstanceOf(AbortError);
+
+    child.stdout.emit("data", Buffer.from("running\n"));
+    controller.abort();
+    taskkill.emit("error", new Error("spawn taskkill ENOENT")); // then child.kill() emits close
+
+    await assertion;
+    expect(child.kill).toHaveBeenCalled();
   });
 
   it("resolves with code + accumulated stdout/stderr on close", async () => {
@@ -346,6 +420,40 @@ describe("runWithWatchdog", () => {
 
     await promise;
     expect(lines).toEqual(["[download] 10%", "[download] 55%", "done", "final"]);
+  });
+
+  it("reassembles a multi-byte UTF-8 codepoint split across two chunks instead of corrupting it to U+FFFD (per-stream StringDecoder)", async () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const promise = runWithWatchdog("/bin/x", [], { idleMs: 1_000 });
+    // "café" — the 'é' (U+00E9) is 0xC3 0xA9 in UTF-8; cut the buffer between
+    // the two bytes so each chunk carries half of the codepoint.
+    const full = Buffer.from("café", "utf8");
+    const cut = full.length - 1;
+    child.stdout.emit("data", full.subarray(0, cut));
+    child.stdout.emit("data", full.subarray(cut));
+    child.emit("close", 0);
+
+    await expect(promise).resolves.toMatchObject({ stdout: "café" });
+  });
+
+  it("does not corrupt a non-ASCII tagged filepath line split mid-codepoint (the file-actions bug this decoder fixes)", async () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const lines: string[] = [];
+    const promise = runWithWatchdog("/bin/x", [], { idleMs: 1_000, onStdoutLine: (l) => lines.push(l) });
+
+    const line = Buffer.from("THE-DOWNLOADER-FILEPATH:/tmp/Café Münchén.mp4\n", "utf8");
+    // Cut in the middle of a 2-byte sequence (right after its lead byte).
+    const idx = line.indexOf(0xc3);
+    child.stdout.emit("data", line.subarray(0, idx + 1));
+    child.stdout.emit("data", line.subarray(idx + 1));
+    child.emit("close", 0);
+
+    await promise;
+    expect(lines).toEqual(["THE-DOWNLOADER-FILEPATH:/tmp/Café Münchén.mp4"]);
   });
 
   it("flushes a trailing partial line (no final newline) via onStdoutLine on close", async () => {
