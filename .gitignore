@@ -10,9 +10,7 @@
 .DS_Store
 raycast-env.d.ts
 
-# superpowers brainstorming + planning docs (kept locally at ~/Documents/Personal/the-downloader-planning/)
 .superpowers/
 docs/superpowers/
 
-# Claude Code per-session worktree state
 .claude/

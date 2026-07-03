@@ -30,12 +30,16 @@ spotDL is not on Homebrew — the extension downloads its prebuilt binary direct
 
 ## Supported sites
 
-See [SUPPORTED_SITES.md](SUPPORTED_SITES.md).
+See [SUPPORTED_SITES.md](https://github.com/raycast/extensions/blob/main/extensions/the-downloader/SUPPORTED_SITES.md).
 
 ## Login-gated galleries
 
-To download from sites that require a login, point the extension at a browser you're already signed into. See [BROWSER_COOKIES.md](BROWSER_COOKIES.md).
+To download from sites that require a login, point the extension at a browser you're already signed into. See [BROWSER_COOKIES.md](https://github.com/raycast/extensions/blob/main/extensions/the-downloader/BROWSER_COOKIES.md).
 
 ## Spotify downloads
 
-Spotify links need a one-time Developer app setup so spotDL can fetch track metadata. See [SPOTIFY.md](SPOTIFY.md).
+Spotify links need a one-time Developer app setup so spotDL can fetch track metadata. See [SPOTIFY.md](https://github.com/raycast/extensions/blob/main/extensions/the-downloader/SPOTIFY.md).
+
+## Credits
+
+This extension builds on the [Video Downloader](https://www.raycast.com/vimtor/video-downloader) extension by vimtor and contributors.

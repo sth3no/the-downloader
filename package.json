@@ -2,10 +2,10 @@
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "the-downloader",
   "title": "The Downloader",
-  "description": "Download videos, audio, image galleries, Spotify music, and complete webpages from YouTube, Reddit, Spotify and more",
+  "description": "Download videos, audio, image galleries, music, and complete webpages from YouTube, Reddit, Spotify, and more",
   "type": "module",
   "icon": "icon.png",
-  "author": "Stheno",
+  "author": "sth3no",
   "categories": [
     "Media",
     "Productivity"
@@ -57,7 +57,7 @@
     {
       "name": "downloadPath",
       "title": "Download Folder",
-      "description": "Path to download video",
+      "description": "Folder where downloaded files are saved.",
       "type": "directory",
       "default": "~/Downloads",
       "required": true
@@ -212,7 +212,7 @@
     {
       "name": "spotifyClientId",
       "title": "Spotify: Client ID",
-      "description": "Spotify Developer app Client ID. Required for reliable Spotify downloads — without it, spotDL's anonymous session frequently fails with 'Could not get session auth tokens'. See SPOTIFY.md for one-time setup.",
+      "description": "Spotify Developer app Client ID. Required for reliable Spotify downloads — without it, spotDL's anonymous session frequently fails with 'Could not get session auth tokens'. For one-time setup, see the Spotify setup guide linked in the README.",
       "type": "textfield",
       "default": "",
       "required": false
@@ -228,7 +228,7 @@
     {
       "name": "spotifyUserAuth",
       "title": "Spotify: User Authentication",
-      "description": "Enable browser-based OAuth so spotDL can read your private playlists and saved library. On the next Spotify download your browser opens once to authorize the Dev app on http://127.0.0.1:9900/, which must be registered as a Redirect URI on the app. See SPOTIFY.md.",
+      "description": "Enable browser-based OAuth so spotDL can read your private playlists and saved library. On the next Spotify download your browser opens once to authorize the Dev app on http://127.0.0.1:9900/, which must be registered as a Redirect URI on the app. See the Spotify setup guide linked in the README.",
       "type": "checkbox",
       "label": "Use browser OAuth for private content",
       "default": false,
@@ -360,7 +360,6 @@
   "dependencies": {
     "@raycast/api": "^1.104.19",
     "@raycast/utils": "^2.2.5",
-    "@types/validator": "^13.15.10",
     "date-fns": "^4.4.0",
     "execa": "^9.6.1",
     "srt-parser-2": "^1.2.3",
@@ -370,6 +369,7 @@
     "@raycast/eslint-config": "^2.1.1",
     "@types/node": "22.19.19",
     "@types/react": "^19.2.16",
+    "@types/validator": "^13.15.10",
     "eslint": "^9.39.4",
     "prettier": "^3.8.3",
     "typescript": "^5.9.3",
