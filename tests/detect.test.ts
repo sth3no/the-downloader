@@ -44,6 +44,15 @@ describe("detectSource", () => {
     expect(detectSource("example.com/article")).toBe("webpage");
   });
 
+  it("detects the scheme case-insensitively — an uppercase HTTPS:// URL still routes by its real host", () => {
+    // isValidUrl accepts uppercase schemes and normalizeUrl leaves them alone;
+    // a case-sensitive startsWith("http") here prepended a second scheme and
+    // parsed the hostname as "https", mis-routing YouTube links to monolith.
+    expect(detectSource("HTTPS://www.youtube.com/watch?v=abc")).toBe("video");
+    expect(detectSource("Https://open.spotify.com/track/abc")).toBe("spotify");
+    expect(detectSource("HTTP://imgur.com/gallery/xyz")).toBe("gallery");
+  });
+
   it("routes an unparseable URL to webpage", () => {
     expect(detectSource("not a url")).toBe("webpage");
   });

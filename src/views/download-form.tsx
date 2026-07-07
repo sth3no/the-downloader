@@ -40,6 +40,7 @@ import {
   downloadPath,
   formatHHMM,
   getDenoPath,
+  getForceIpv4,
   getFormatTitle,
   getFormatValue,
   getGalleryDlPath,
@@ -86,7 +87,8 @@ const FILETYPE_ICON: Record<Filetype, Icon> = {
   website: Icon.Globe,
 };
 
-const SPOTDL_SETUP_GUIDE_URL = "https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md";
+// Canonical monorepo copies of the docs — the personal-repo copies may drift or 404 after submission.
+const SPOTDL_SETUP_GUIDE_URL = "https://github.com/raycast/extensions/blob/main/extensions/the-downloader/SPOTIFY.md";
 
 /** Turn a rejected runner into a red, copyable failure toast — or a neutral "Cancelled" toast when the user pressed Stop. */
 function failToast(toast: Toast, error: unknown) {
@@ -211,7 +213,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       const data = await fetchVideoInfo(
         getytdlPath(),
         u,
-        prefs.forceIpv4,
+        getForceIpv4(),
         fs.existsSync(denoPath) ? denoPath : undefined,
         {
           signal: metaAbortable.current?.signal,
@@ -434,7 +436,8 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
           // with a literal `%` doesn't break yt-dlp's output template.
           destination: folder,
           outputTemplate: "%(title)s (%(id)s).%(ext)s",
-          forceIpv4: prefs.forceIpv4,
+          // Read fresh so flipping Force IPv4 after a stall applies on resubmit.
+          forceIpv4: getForceIpv4(),
           idleMs: getIdleTimeoutMs(),
           abortSignal: signal,
         });
@@ -479,7 +482,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
         toast.secondaryAction = {
           title: "Open Setup Guide",
-          onAction: () => open("https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md"),
+          onAction: () => open(SPOTDL_SETUP_GUIDE_URL),
         };
         return;
       }
@@ -560,7 +563,8 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
           outputTemplate: "%(title)s (%(id)s).%(ext)s",
           ffmpegPath: getffmpegPath(),
           denoPath: fs.existsSync(denoPath) ? denoPath : undefined,
-          forceIpv4: prefs.forceIpv4,
+          // Read fresh so flipping Force IPv4 after a stall applies on resubmit.
+          forceIpv4: getForceIpv4(),
           idleMs: getIdleTimeoutMs(),
           abortSignal: signal,
         },
@@ -604,7 +608,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             <Action.OpenInBrowser
               icon={Icon.Info}
               title="About This Extension"
-              url="https://github.com/sth3no/the-downloader/blob/main/ABOUT.md"
+              url="https://github.com/raycast/extensions/blob/main/extensions/the-downloader/ABOUT.md"
             />
           </ActionPanel.Section>
         </ActionPanel>
@@ -612,7 +616,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       searchBarAccessory={
         <Form.LinkAccessory
           text="Supported Sites"
-          target="https://github.com/sth3no/the-downloader/blob/main/SUPPORTED_SITES.md"
+          target="https://github.com/raycast/extensions/blob/main/extensions/the-downloader/SUPPORTED_SITES.md"
         />
       }
     >

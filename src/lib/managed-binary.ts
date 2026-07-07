@@ -202,8 +202,12 @@ export async function downloadSpotdl(supportDir: string): Promise<string> {
 export async function getInstalledVersion(spotdlPath: string): Promise<string> {
   // Bound the probe and detach stdin: a wedged binary (or one that blocks on an
   // interactive prompt) would otherwise hang the Updater's "Checking versions…"
-  // toast forever with no way out.
-  const { stdout } = await execa(spotdlPath, ["--version"], { timeout: 15_000, stdin: "ignore" });
+  // toast forever with no way out. The cap is generous because the managed
+  // spotDL is a PyInstaller onefile bundle that self-extracts its whole payload
+  // on every launch — a cold start behind antivirus scanning (Windows Defender)
+  // or a slow disk legitimately takes tens of seconds, and a too-tight cap made
+  // the version check fail spuriously on exactly those machines.
+  const { stdout } = await execa(spotdlPath, ["--version"], { timeout: 60_000, stdin: "ignore" });
   const match = stdout.match(/\d+\.\d+\.\d+/);
   return match ? match[0] : stdout.trim();
 }

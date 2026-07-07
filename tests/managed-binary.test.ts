@@ -178,7 +178,7 @@ describe("getInstalledVersion", () => {
     expect(vi.mocked(execa)).toHaveBeenCalledWith(
       "/support/spotdl",
       ["--version"],
-      expect.objectContaining({ timeout: 15_000, stdin: "ignore" }),
+      expect.objectContaining({ timeout: 60_000, stdin: "ignore" }),
     );
   });
 });

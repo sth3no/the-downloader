@@ -50,7 +50,8 @@ This extension can download \`${executable}\` for you — a one-time, self-conta
 Press **⏎** to download it now. **Please do not close Raycast while the download is in progress.**
 `;
 
-const SPOTDL_SETUP_GUIDE_URL = "https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md";
+// Canonical monorepo copy — the personal-repo copy may drift or 404 after submission.
+const SPOTDL_SETUP_GUIDE_URL = "https://github.com/raycast/extensions/blob/main/extensions/the-downloader/SPOTIFY.md";
 
 /**
  * Bound every package-manager spawn. execa defaults to no timeout, so a wedged

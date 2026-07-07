@@ -245,35 +245,35 @@
     {
       "name": "ytdlPath",
       "title": "yt-dlp Path",
-      "description": "Path to the yt-dlp executable. You can enter `which yt-dlp` to terminal to find its path.",
+      "description": "Path to the yt-dlp executable. Run `which yt-dlp` (macOS) or `where yt-dlp` (Windows) in a terminal to find it.",
       "type": "textfield",
       "required": false
     },
     {
       "name": "ffmpegPath",
       "title": "ffmpeg Path",
-      "description": "Path to the ffmpeg executable. You can enter `which ffmpeg` to terminal to find its path.",
+      "description": "Path to the ffmpeg executable. Run `which ffmpeg` (macOS) or `where ffmpeg` (Windows) in a terminal to find it.",
       "type": "textfield",
       "required": false
     },
     {
       "name": "ffprobePath",
       "title": "ffprobe Path",
-      "description": "Path to the ffprobe executable. Usually installed along with ffmpeg. You can enter `which ffprobe` to terminal to find its path.",
+      "description": "Path to the ffprobe executable, usually installed along with ffmpeg. Run `which ffprobe` (macOS) or `where ffprobe` (Windows) in a terminal to find it.",
       "type": "textfield",
       "required": false
     },
     {
       "name": "denoPath",
       "title": "Deno Path",
-      "description": "Path to the Deno executable — the JavaScript runtime yt-dlp uses for YouTube. Run `which deno` to find it.",
+      "description": "Path to the Deno executable — an optional JavaScript runtime that makes yt-dlp's YouTube extraction more reliable. Run `which deno` (macOS) or `where deno` (Windows) in a terminal to find it.",
       "type": "textfield",
       "required": false
     },
     {
       "name": "galleryDlPath",
       "title": "gallery-dl Path",
-      "description": "Path to the gallery-dl executable. Run `which gallery-dl` to find it.",
+      "description": "Path to the gallery-dl executable. Run `which gallery-dl` (macOS) or `where gallery-dl` (Windows) in a terminal to find it.",
       "type": "textfield",
       "required": false
     },
@@ -287,7 +287,7 @@
     {
       "name": "monolithPath",
       "title": "monolith Path",
-      "description": "Path to the monolith executable. Run `which monolith` to find it.",
+      "description": "Path to the monolith executable. Run `which monolith` (macOS) or `where monolith` (Windows) in a terminal to find it.",
       "type": "textfield",
       "required": false
     },

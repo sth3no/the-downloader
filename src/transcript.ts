@@ -3,7 +3,14 @@ import os from "node:os";
 import path from "path";
 import crypto from "node:crypto";
 import { environment } from "@raycast/api";
-import { forceIpv4, getDenoPath, getffmpegPath, getIdleTimeoutMs, getytdlPath, sanitizeVideoTitle } from "./utils.js";
+import {
+  getDenoPath,
+  getForceIpv4,
+  getffmpegPath,
+  getIdleTimeoutMs,
+  getytdlPath,
+  sanitizeVideoTitle,
+} from "./utils.js";
 import { fetchVideoInfo, isLiveStream } from "./lib/ytdlp.js";
 import { runWithWatchdog } from "./lib/run.js";
 import SRTParser from "srt-parser-2";
@@ -46,6 +53,8 @@ export default async function extractTranscript(url: string, language: string = 
   // print [debug]/[warning] lines before the JSON), --no-warnings/--quiet/
   // --no-playlist, the Deno runtime, and an abortable timeout — none of which
   // the previous bare `JSON.parse(execa stdout)` had.
+  // Read fresh so a pref flipped while the Download form is open applies here.
+  const forceIpv4 = getForceIpv4();
   const video = await fetchVideoInfo(ytdlPath, url, forceIpv4, deno, { signal, timeoutMs: getIdleTimeoutMs() });
 
   // Check if it's a live stream

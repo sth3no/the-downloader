@@ -37,6 +37,10 @@ import {
   normalizeUrl,
 } from "./utils.js";
 
+/** The canonical copy of the Spotify setup guide once the extension lives in
+ *  the raycast/extensions monorepo — the personal-repo copy may drift or 404. */
+const SPOTDL_SETUP_GUIDE_URL = "https://github.com/raycast/extensions/blob/main/extensions/the-downloader/SPOTIFY.md";
+
 /** A no-view command cannot render the Installer view, so a missing tool is
  *  handed off to the main Download command, which can. */
 async function handOff(tool: string, url: string): Promise<void> {
@@ -83,7 +87,11 @@ function paintCancelled(toast: Toast) {
 }
 
 export default async function FastDownload(props: LaunchProps<{ arguments: Arguments.FastDownload }>): Promise<void> {
-  const { url: rawUrl } = props.arguments;
+  // Raycast argument fields don't trim pasted text, and URLs copied from
+  // documents/chat routinely carry stray whitespace the form's submit path
+  // already strips — validate the trimmed value or the same paste that works
+  // in the form fails here as "Invalid URL".
+  const rawUrl = props.arguments.url.trim();
 
   if (!isValidUrl(rawUrl)) {
     await showToast({ style: Toast.Style.Failure, title: "Invalid URL", message: rawUrl });
@@ -191,7 +199,7 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
       toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
       toast.secondaryAction = {
         title: "Open Setup Guide",
-        onAction: () => open("https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md"),
+        onAction: () => open(SPOTDL_SETUP_GUIDE_URL),
       };
       return;
     }
@@ -245,7 +253,7 @@ export default async function FastDownload(props: LaunchProps<{ arguments: Argum
         } else if (error.summary.action === "open-setup-guide") {
           toast.secondaryAction = {
             title: "Open Setup Guide",
-            onAction: () => open("https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md"),
+            onAction: () => open(SPOTDL_SETUP_GUIDE_URL),
           };
         } else {
           toast.secondaryAction = undefined;

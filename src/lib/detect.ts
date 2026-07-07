@@ -45,7 +45,11 @@ const VIDEO_DOMAINS = [
 
 function hostnameOf(url: string): string {
   try {
-    const withProtocol = url.startsWith("http") ? url : `https://${url}`;
+    // Scheme detection must be case-insensitive (matching normalizeUrl):
+    // isValidUrl accepts "HTTPS://…", and a case-sensitive startsWith("http")
+    // would prepend a second scheme, parse the hostname as "https", and route
+    // a YouTube URL to the webpage/monolith fallback.
+    const withProtocol = /^https?:\/\//i.test(url) ? url : `https://${url}`;
     return new URL(withProtocol).hostname.replace(/^www\./, "");
   } catch {
     return "";

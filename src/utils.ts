@@ -22,8 +22,6 @@ export const {
   autoLoadUrlFromClipboard,
   autoLoadUrlFromSelectedText,
   enableBrowserExtensionSupport,
-  forceIpv4,
-  networkIdleTimeoutSec,
   ytdlPath: ytdlPathPreference,
   ffmpegPath: ffmpegPathPreference,
   ffprobePath: ffprobePathPreference,
@@ -54,10 +52,24 @@ export const downloadPath = expandTilde(prefs.downloadPath);
  * `networkIdleTimeoutSec` from preferences and falls back to 120 seconds when
  * the value is missing, non-numeric, or non-positive — defensive because the
  * preference is a free-form text field.
+ *
+ * Read FRESH on every call (not from the module-load destructure): the
+ * watchdog's own failure message tells the user to raise this preference and
+ * retry, and in a still-open Download form a module-captured value would make
+ * that documented recovery loop silently use the old timeout.
  */
 export function getIdleTimeoutMs(): number {
-  const parsed = Number(networkIdleTimeoutSec);
+  const parsed = Number(getPreferenceValues<ExtensionPreferences>().networkIdleTimeoutSec);
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 1000) : DEFAULT_IDLE_MS;
+}
+
+/**
+ * The Force IPv4 preference, read fresh on every call for the same reason as
+ * `getIdleTimeoutMs`: its description tells users to flip it when downloads
+ * stall, and the fix must apply on the next submit of an already-open form.
+ */
+export function getForceIpv4(): boolean {
+  return getPreferenceValues<ExtensionPreferences>().forceIpv4;
 }
 
 /**

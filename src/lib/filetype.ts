@@ -86,9 +86,10 @@ export function filetypeGuidance(source: SourceType): string {
  * sites (Twitch, Vimeo, TikTok, …) don't need a JS runtime at all — hard-gating
  * on Deno would trap those behind an installer screen. The video/audio paths
  * (form, fast-download, download-video tool) instead pass Deno only when it is
- * present. Deno stays installable via the Update Libraries / Installer flow
- * (it's still in `TOOLS`), which improves YouTube reliability; it just isn't a
- * blocking requirement here.
+ * present. The trade-off: since the Installer only triggers for missing
+ * REQUIRED tools, the extension never installs Deno itself — the README's
+ * "What you need" section points users at `brew install deno` / winget for the
+ * improved YouTube reliability it brings.
  */
 export function requiredTools(source: SourceType, filetype: Filetype): string[] {
   const tool = resolveTool(source, filetype);

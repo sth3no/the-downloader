@@ -137,12 +137,22 @@ export function runWithWatchdog(binary: string, args: string[], options: RunOpti
           // reinterpreted. If it can't even start (e.g. ENOENT), the async
           // 'error' event drops us to the direct child kill below.
           const killer = spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
-          killer.on("error", () => {
+          const directKill = () => {
             try {
               child.kill();
             } catch {
               /* child may already be dead */
             }
+          };
+          killer.on("error", directKill);
+          // taskkill can also spawn fine but exit non-zero WITHOUT killing the
+          // tree (access denied on a terminating/protected process). With no
+          // SIGKILL escalation pass on Windows, that would leave the child
+          // running and the promise permanently unsettled — fall back to a
+          // direct kill so `close` is still guaranteed to fire. (Exit 128 =
+          // "not found", i.e. the child already died: the fallback is a no-op.)
+          killer.on("exit", (killerCode) => {
+            if (killerCode !== 0) directKill();
           });
           return;
         } catch {

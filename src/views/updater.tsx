@@ -45,6 +45,11 @@ export default function Updater() {
   // WITHOUT popping its own "Checking versions…" toast — otherwise the animated
   // toast would instantly clobber the just-shown "Upgrade complete" outcome.
   const skipNextCheckToast = useRef(false);
+  // Guards the Upgrade action against a second press mid-run: a concurrent
+  // `brew upgrade` fails on Homebrew's process lock and would report a bogus
+  // "finished with issues" for an upgrade that actually succeeded. A ref (not
+  // state) so even two presses within one render can't both start.
+  const upgradeInFlight = useRef(false);
 
   const allUpToDate = Object.values(outdated).every((version) => !version);
 
@@ -58,6 +63,11 @@ export default function Updater() {
     skipNextCheckToast.current = false;
     const toast = silent ? undefined : new Toast({ style: Toast.Style.Animated, title: "Checking versions..." });
     toast?.show();
+    // Once the animated toast is converted into the persistent failure toast it
+    // must SURVIVE the unmount cleanup — after a failed check the panel's only
+    // action is Back, and hiding the toast on pop would dismiss the error (and
+    // its Copy action) at the exact moment the user goes looking for it.
+    let convertedToFailure = false;
 
     check()
       .then((result) => {
@@ -74,6 +84,7 @@ export default function Updater() {
         // On a silent recheck there is no animated toast to convert, so spin up
         // a fresh failure toast; otherwise reuse the "Checking versions…" one.
         const failureToast = toast ?? new Toast({ style: Toast.Style.Failure, title: "Failed to check versions" });
+        convertedToFailure = true;
         failureToast.style = Toast.Style.Failure;
         failureToast.title = "Failed to check versions";
         failureToast.message = errorMessage;
@@ -89,10 +100,11 @@ export default function Updater() {
       });
 
     // Popping back mid-check must not leave the animated toast up until the
-    // promise settles, nor apply its results to an unmounted view.
+    // promise settles, nor apply its results to an unmounted view. A toast
+    // already converted into the failure state is left showing (see above).
     return () => {
       cancelled = true;
-      toast?.hide();
+      if (!convertedToFailure) toast?.hide();
     };
   }, [upgradingMessage]);
 
@@ -143,6 +155,8 @@ export default function Updater() {
               icon={Icon.Download}
               title="Upgrade"
               onAction={async () => {
+                if (upgradeInFlight.current) return;
+                upgradeInFlight.current = true;
                 const toast = new Toast({ style: Toast.Style.Animated, title: "Upgrading..." });
                 toast.show();
                 try {
@@ -170,6 +184,7 @@ export default function Updater() {
                     };
                   }
                 } finally {
+                  upgradeInFlight.current = false;
                   // Let the outcome toast set above survive: the check effect
                   // re-fires when upgradingMessage clears, and without this it
                   // would immediately cover it with "Checking versions…".
@@ -217,23 +232,32 @@ function extractSemver(version: string): string {
 }
 
 async function check(): Promise<CheckResult> {
+  // Probe spotDL ONCE and share the promise: getVersions and getOutdated both
+  // need `spotdl --version`, and the managed binary is a PyInstaller onefile
+  // bundle that self-extracts on every launch — two concurrent probes double
+  // the slowest step of the whole check (and its AV-scan cost on Windows).
+  const spotdlProbe = probeSpotdl();
   const [{ versions, issues: versionIssues }, { outdated, issues: outdatedIssues, spotdlExternal }] = await Promise.all(
-    [getVersions(), getOutdated()],
+    [getVersions(spotdlProbe), getOutdated(spotdlProbe)],
   );
   return { versions, outdated, checkIssues: [...versionIssues, ...outdatedIssues], spotdlExternal };
 }
 
-async function getSpotdlVersion(): Promise<string> {
+type SpotdlProbe = { path: string; exists: boolean; version: string; error?: unknown };
+
+async function probeSpotdl(): Promise<SpotdlProbe> {
   const spotdlPath = getSpotdlPath();
-  if (!fs.existsSync(spotdlPath)) return "not installed";
+  if (!fs.existsSync(spotdlPath)) return { path: spotdlPath, exists: false, version: "" };
   try {
-    return await getInstalledVersion(spotdlPath);
-  } catch {
-    return "unknown";
+    return { path: spotdlPath, exists: true, version: await getInstalledVersion(spotdlPath) };
+  } catch (error) {
+    return { path: spotdlPath, exists: true, version: "", error };
   }
 }
 
-async function getVersions(): Promise<{ versions: Record<string, string>; issues: PackageIssue[] }> {
+async function getVersions(
+  spotdlProbe: Promise<SpotdlProbe>,
+): Promise<{ versions: Record<string, string>; issues: PackageIssue[] }> {
   const versions: Record<string, string> = {};
   const issues: PackageIssue[] = [];
   if (isMac) {
@@ -274,7 +298,8 @@ async function getVersions(): Promise<{ versions: Record<string, string>; issues
       issues.push({ pkg: "winget", message: errorMessageOf(error) });
     }
   }
-  versions["spotdl"] = await getSpotdlVersion();
+  const probe = await spotdlProbe;
+  versions["spotdl"] = !probe.exists ? "not installed" : probe.error ? "unknown" : probe.version;
   return { versions, issues };
 }
 
@@ -291,7 +316,7 @@ function parseWingetVersion(output: string, packageId: string): string {
   return "";
 }
 
-async function getOutdated(): Promise<{
+async function getOutdated(spotdlProbe: Promise<SpotdlProbe>): Promise<{
   outdated: Record<string, string>;
   issues: PackageIssue[];
   spotdlExternal: boolean;
@@ -333,7 +358,7 @@ async function getOutdated(): Promise<{
     }
   }
   try {
-    const spotdlPath = getSpotdlPath();
+    const probe = await spotdlProbe;
     // Only the MANAGED spotDL is compared against GitHub releases. getSpotdlPath()
     // can resolve a Homebrew-installed native (arm64) build, which lags the GitHub
     // cadence — flagging that as outdated and running the managed "Upgrade" would
@@ -344,10 +369,10 @@ async function getOutdated(): Promise<{
     // manager. Mirror resolveBinary's managed-path construction (path.posix.join,
     // ".exe" on Windows) so the equality check matches what getSpotdlPath returns.
     const managedSpotdlPath = path.posix.join(environment.supportPath, isWindows ? "spotdl.exe" : "spotdl");
-    const installedOnDisk = fs.existsSync(spotdlPath);
-    spotdlExternal = installedOnDisk && spotdlPath !== managedSpotdlPath;
-    if (installedOnDisk && !spotdlExternal) {
-      const installed = extractSemver(await getInstalledVersion(spotdlPath));
+    spotdlExternal = probe.exists && probe.path !== managedSpotdlPath;
+    if (probe.exists && !spotdlExternal) {
+      if (probe.error) throw probe.error;
+      const installed = extractSemver(probe.version);
       const latest = extractSemver((await getLatestRelease()).version);
       if (installed && latest && installed !== latest) {
         outdated["spotdl"] = latest;

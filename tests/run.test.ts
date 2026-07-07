@@ -197,6 +197,28 @@ describe("runWithWatchdog", () => {
     expect(child.kill).toHaveBeenCalled();
   });
 
+  it("on Windows, falls back to a direct child.kill() when taskkill exits non-zero without killing the tree (e.g. access denied)", async () => {
+    // taskkill can spawn fine yet fail to terminate the child. With no SIGKILL
+    // escalation pass on Windows, ignoring its exit code would leave the child
+    // running and the promise permanently unsettled.
+    setPlatform("win32");
+    const child = fakeChild();
+    (child as unknown as { pid: number }).pid = 4242;
+    const taskkill = new EventEmitter();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child).mockReturnValueOnce(taskkill);
+
+    const controller = new AbortController();
+    const promise = runWithWatchdog("C:/bin/x.exe", [], { idleMs: 60_000, abortSignal: controller.signal });
+    const assertion = expect(promise).rejects.toBeInstanceOf(AbortError);
+
+    child.stdout.emit("data", Buffer.from("running\n"));
+    controller.abort();
+    taskkill.emit("exit", 1); // access denied — tree still alive; then child.kill() emits close
+
+    await assertion;
+    expect(child.kill).toHaveBeenCalled();
+  });
+
   it("resolves with code + accumulated stdout/stderr on close", async () => {
     const child = fakeChild();
     (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);

@@ -8,5 +8,5 @@
 - Archive complete webpages as a single self-contained HTML file via monolith, with a Complete / Lightweight (no JavaScript) choice.
 - **Fast Download** no-view command — pass a URL as an argument and download it instantly using your saved defaults, no form.
 - AI tools to download a video and extract a video's transcript by @-mentioning the extension in Raycast AI.
-- A guided installer that detects and installs missing dependencies (yt-dlp, ffmpeg, gallery-dl, Deno, spotDL, monolith) and keeps them updated.
+- A guided installer that detects and installs missing dependencies (yt-dlp, ffmpeg, gallery-dl, spotDL, monolith) and keeps them updated.
 - Support for macOS and Windows.

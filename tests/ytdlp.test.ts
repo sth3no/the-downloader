@@ -65,6 +65,7 @@ describe("buildVideoDownloadArgs", () => {
       "mp3",
       "--audio-quality",
       "0",
+      "--no-quiet",
       "--progress",
       "--newline",
       "--print",
@@ -102,6 +103,7 @@ describe("buildVideoDownloadArgs", () => {
       "bestvideo+bestaudio/best",
       "--merge-output-format",
       "mp4",
+      "--no-quiet",
       "--progress",
       "--newline",
       "--print",
@@ -142,6 +144,15 @@ describe("buildVideoDownloadArgs", () => {
     expect(audio[audio.indexOf("--match-filters") + 1]).toBe("!is_live");
     const video = buildVideoDownloadArgs({ ...base, format: "bestvideo+bestaudio/best#mp4" });
     expect(video[video.indexOf("--match-filters") + 1]).toBe("!is_live");
+  });
+
+  it("passes --no-quiet so the match-filter skip line survives --print's implied quiet mode", () => {
+    // --print implies --quiet, under which yt-dlp suppresses the
+    // "does not pass filter (!is_live), skipping" line entirely (verified
+    // against yt-dlp 2026.06.09: exit 0 with EMPTY output for a live URL).
+    // Without --no-quiet the live-stream backstop can never fire and a live
+    // URL reads as a successful download.
+    expect(buildVideoDownloadArgs({ ...base, format: "best#mp4" })).toContain("--no-quiet");
   });
 
   it("emits --force-ipv4 only when forceIpv4 is set (matching the metadata probe)", () => {
@@ -239,6 +250,23 @@ describe("runVideoDownload", () => {
     await expect(promise).rejects.toThrow(/Live streams are not supported/i);
   });
 
+  it("does NOT mislabel a FAILED download as a live stream when stderr contains a routine 'Skipping ...' warning", async () => {
+    // yt-dlp's YouTube extractor routinely warns "Skipping player responses
+    // from ... clients". The live check must be gated on a ZERO exit and match
+    // only the filter message itself — a non-zero exit surfaces the real error.
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const promise = runVideoDownload("/yt-dlp", options, vi.fn());
+
+    child.stderr.emit("data", Buffer.from("WARNING: [youtube] Skipping player responses from android clients\n"));
+    child.stderr.emit("data", Buffer.from("ERROR: Sign in to confirm you're not a bot\n"));
+    child.emit("close", 1);
+
+    await expect(promise).rejects.toThrow(/Sign in to confirm/);
+    await expect(promise).rejects.not.toThrow(/Live streams/);
+  });
+
   it("does NOT mislabel a genuine download as a live stream when the after_move line is present", async () => {
     // Guard: the live-stream error is gated on an empty filePath, so a normal
     // download that produced a file is unaffected even if stdout is noisy.
@@ -333,6 +361,25 @@ describe("fetchVideoInfo", () => {
     await expect(
       fetchVideoInfo("/yt-dlp", "https://example.com/v", false, undefined, { timeoutMs: 5_000 }),
     ).rejects.toThrow(/no metadata within 5s/i);
+  });
+
+  it("maps a plain non-zero exit to yt-dlp's stderr (not execa's command-line-first message)", async () => {
+    // execa's message leads with the full command line, pushing the actual
+    // "ERROR: ..." reason off the end of a toast.
+    const err = new FakeExecaError("Command failed with exit code 1: /yt-dlp --dump-json https://example.com/v");
+    (err as unknown as { stderr: string }).stderr = "ERROR: Video unavailable\n";
+    execaMock.mockRejectedValue(err);
+    await expect(fetchVideoInfo("/yt-dlp", "https://example.com/v", false)).rejects.toThrow("ERROR: Video unavailable");
+  });
+
+  it("falls back to execa's shortMessage when yt-dlp printed nothing on stderr", async () => {
+    const err = new FakeExecaError("Command failed with exit code 1: /yt-dlp --dump-json …");
+    (err as unknown as { stderr: string; shortMessage: string }).stderr = "";
+    (err as unknown as { shortMessage: string }).shortMessage = "Command failed with exit code 1";
+    execaMock.mockRejectedValue(err);
+    await expect(fetchVideoInfo("/yt-dlp", "https://example.com/v", false)).rejects.toThrow(
+      /Command failed with exit code 1/,
+    );
   });
 });
 

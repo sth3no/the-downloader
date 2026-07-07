@@ -74,6 +74,16 @@ export async function fetchVideoInfo(
         `yt-dlp produced no metadata within ${seconds}s and was killed. This usually means it is stuck on an auth or network step; retry, or raise the Network: Idle Timeout preference.`,
       );
     }
+    // A plain non-zero exit (private/deleted video, geo-block, unsupported URL):
+    // surface yt-dlp's own stderr ("ERROR: Video unavailable"), not execa's
+    // message, which leads with the full command line and pushes the actual
+    // reason off the end of a toast. Mirrors the stderr-first mapping every
+    // other runner in this codebase uses.
+    if (error instanceof ExecaError) {
+      const stderrRaw: unknown = (error as { stderr?: unknown }).stderr;
+      const stderr = typeof stderrRaw === "string" ? stderrRaw.trim() : "";
+      throw new Error(stderr || error.shortMessage);
+    }
     throw error;
   }
 }
@@ -120,9 +130,12 @@ const FILEPATH_LINE_RE = new RegExp(`^${FILEPATH_TAG}(.+)$`);
  * yt-dlp prints this when `--match-filters "!is_live"` rejects the URL (a live
  * stream): `[download] <title> does not pass filter (!is_live), skipping ..`.
  * We detect it to turn an otherwise-silent "exit 0 with no downloaded file" into
- * a clear live-stream error instead of an apparent success.
+ * a clear live-stream error instead of an apparent success. The pattern must
+ * stay anchored to the filter message itself: a bare /skipping/i also matched
+ * yt-dlp's routine warnings ("Skipping player responses from … clients"), which
+ * mislabeled genuinely failed downloads as live streams.
  */
-const MATCH_FILTER_SKIP_RE = /does not pass filter|skipping/i;
+const MATCH_FILTER_SKIP_RE = /does not pass filter/i;
 
 /**
  * Build yt-dlp CLI args for a media download. `format` is a `"<download>#<target>"`
@@ -163,6 +176,13 @@ const MATCH_FILTER_SKIP_RE = /does not pass filter|skipping/i;
  * `--newline` makes yt-dlp terminate each progress update with a real newline.
  * On a pipe (non-TTY) it otherwise redraws progress with bare `\r`, which a
  * line-buffered reader would sit on until the download finished.
+ *
+ * `--no-quiet` is required for the live-stream backstop to work at all:
+ * `--print` implies `--quiet`, and under quiet the match-filter skip line is
+ * suppressed entirely (verified against yt-dlp 2026.06.09 — the extension's
+ * argv without `--no-quiet` produces exit 0 with EMPTY stdout/stderr for a live
+ * URL, which read as a successful download). `--progress` only un-suppresses
+ * the progress bar, not the skip message.
  */
 export function buildVideoDownloadArgs(a: VideoDownloadArgs): string[] {
   const args = ["-P", a.destination, "-o", a.outputTemplate, "--ffmpeg-location", a.ffmpegPath, "--no-playlist"];
@@ -182,7 +202,7 @@ export function buildVideoDownloadArgs(a: VideoDownloadArgs): string[] {
   } else {
     args.push("--format", downloadFormat, "--merge-output-format", target);
   }
-  args.push("--progress", "--newline", "--print", `after_move:${FILEPATH_TAG}%(filepath)s`, a.url);
+  args.push("--no-quiet", "--progress", "--newline", "--print", `after_move:${FILEPATH_TAG}%(filepath)s`, a.url);
   return args;
 }
 
@@ -222,12 +242,16 @@ export async function runVideoDownload(
   // A live URL is skipped by the `!is_live` match filter: yt-dlp exits 0 but
   // writes no file (no after_move line, so filePath stays empty). Surface that
   // as a clear error instead of resolving with an empty path that reads as a
-  // successful download. Gated on the recognizable skip line so a genuine
-  // download whose after_move line we simply failed to parse isn't mislabeled.
-  if (!filePath && MATCH_FILTER_SKIP_RE.test(stdout + stderr)) {
-    throw new Error("Live streams are not supported. Try again after the stream ends.");
+  // successful download. Gated on BOTH the zero exit and the recognizable skip
+  // line: a non-zero exit must always surface the real stderr (a failed run can
+  // legitimately contain "skipping"-flavored warnings), and a genuine download
+  // whose after_move line we simply failed to parse isn't mislabeled.
+  if (code === 0) {
+    if (!filePath && MATCH_FILTER_SKIP_RE.test(stdout + stderr)) {
+      throw new Error("Live streams are not supported. Try again after the stream ends.");
+    }
+    return { filePath };
   }
-  if (code === 0) return { filePath };
   throw new Error(stderr.trim() || `yt-dlp exited with code ${code}`);
 }
 

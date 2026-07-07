@@ -2,7 +2,7 @@ import {
   getFormatValue,
   getVideoFormats,
   downloadPath,
-  forceIpv4,
+  getForceIpv4,
   getIdleTimeoutMs,
   getytdlPath,
   getffmpegPath,
@@ -64,6 +64,7 @@ export default async function tool(input: Input) {
 
   // Get video info and available formats. Cap the metadata fetch so a wedged
   // extractor can't hang the agent turn indefinitely.
+  const forceIpv4 = getForceIpv4();
   const video = await fetchVideoInfo(ytdlPath, url, forceIpv4, deno, { timeoutMs: getIdleTimeoutMs() });
 
   // Check if it's a live stream
@@ -109,6 +110,13 @@ export default async function tool(input: Input) {
   // filter failed on Windows (paths start with a drive letter, not a slash).
   const FILEPATH_TAG = "THE-DOWNLOADER-FILEPATH:";
   options.push("--print", `after_move:${FILEPATH_TAG}%(filepath)s`);
+
+  // `--print` implies `--quiet`, under which yt-dlp emits NOTHING until the
+  // final after_move line — starving the idle watchdog below, which would then
+  // kill every healthy download longer than the idle window as "stalled".
+  // `--progress --newline` (same as buildVideoDownloadArgs) keeps [download]
+  // lines flowing so the watchdog only fires on a genuine stall.
+  options.push("--progress", "--newline");
 
   // Execute the download through the shared watchdog: stdin is closed so
   // yt-dlp can't block on an interactive auth prompt, and the IDLE timeout
