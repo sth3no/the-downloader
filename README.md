@@ -39,3 +39,11 @@ To download from sites that require a login, point the extension at a browser yo
 ## Spotify downloads
 
 Spotify links need a one-time Developer app setup so spotDL can fetch track metadata. See [SPOTIFY.md](SPOTIFY.md).
+
+## Acknowledgements
+
+The Downloader started as a fork of [Video Downloader](https://www.raycast.com/vimtor/video-downloader) by [vimtor](https://github.com/vimtor), and the yt-dlp download path, the transcript extraction, and the two AI tools still build on that work. Video Downloader is actively maintained and remains available in the Raycast Store — if you only need video and audio downloads, it may be the better fit.
+
+Thanks to Video Downloader's contributors, whose work this extension inherits: pernielsentikaer, d2a, ridemountainpig, xmorse, litomore, anwarulislam, yusifaliyevpro, xilopaint, and chrismessina.
+
+The Downloader adds image-gallery downloads (gallery-dl), Spotify downloads (spotDL), single-file webpage saving (monolith), a Fast Download command, and Windows support.
