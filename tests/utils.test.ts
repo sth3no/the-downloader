@@ -1,4 +1,5 @@
-import { beforeAll, describe, it, expect, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, it, expect, vi } from "vitest";
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -99,6 +100,62 @@ describe("sanitizeVideoTitle (Windows reserved set)", () => {
   it("still strips separators on Windows (the always-invalid set)", async () => {
     const utilsWin = await loadUtilsForPlatform("win32");
     expect(utilsWin.sanitizeVideoTitle("AC/DC")).toBe("ACDC");
+  });
+});
+
+describe("getWingetPath", () => {
+  // Real files stand in for two installed wingets (stable + preview), so the
+  // on-disk check runs for real on any host. `where` is mocked to list them.
+  let dir: string;
+  let stable: string;
+  let preview: string;
+  let missing: string;
+  beforeAll(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "winget-path-"));
+    stable = path.join(dir, "stable-winget.exe");
+    preview = path.join(dir, "preview-winget.exe");
+    missing = path.join(dir, "missing-winget.exe");
+    fs.writeFileSync(stable, "");
+    fs.writeFileSync(preview, "");
+  });
+  afterAll(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  afterEach(() => {
+    vi.doUnmock("child_process");
+    vi.doUnmock("../src/lib/platform-paths");
+    vi.resetModules();
+  });
+
+  /** Load utils with `where winget` printing `output` and the WindowsApps fallback at `canonical`. */
+  async function loadWithWhere(output: string, canonical = "") {
+    vi.resetModules();
+    vi.doMock("child_process", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("child_process")>()),
+      execSync: () => Buffer.from(output),
+    }));
+    vi.doMock("../src/lib/platform-paths", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../src/lib/platform-paths")>()),
+      windowsWingetPath: () => canonical,
+    }));
+    return import("../src/utils");
+  }
+
+  it("returns the first winget when `where` lists two (CRLF output)", async () => {
+    // Regression: newlines were stripped before splitting, gluing both paths
+    // into one that doesn't exist.
+    const { getWingetPath } = await loadWithWhere(`${stable}\r\n${preview}\r\n`);
+    await expect(getWingetPath()).resolves.toBe(stable);
+  });
+
+  it("skips a listed path that isn't on disk", async () => {
+    const { getWingetPath } = await loadWithWhere(`${missing}\r\n${preview}\r\n`);
+    await expect(getWingetPath()).resolves.toBe(preview);
+  });
+
+  it("falls back to the WindowsApps launcher when no listed path exists", async () => {
+    const { getWingetPath } = await loadWithWhere(`${missing}\r\n`, stable);
+    await expect(getWingetPath()).resolves.toBe(stable);
   });
 });
 
