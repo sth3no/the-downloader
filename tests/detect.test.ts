@@ -21,10 +21,27 @@ describe("detectSource", () => {
     expect(detectSource("https://pinterest.de/user/")).toBe("gallery");
     expect(detectSource("https://www.pinterest.co.uk/user/")).toBe("gallery");
     expect(detectSource("https://in.pinterest.com/user/")).toBe("gallery");
+    expect(detectSource("https://cz.pinterest.com/pin/123/")).toBe("gallery");
+    expect(detectSource("https://pinterest.ca/pin/123/")).toBe("gallery");
+    expect(detectSource("https://www.pinterest.com.au/pin/123/")).toBe("gallery");
+    expect(detectSource("https://www.pinterest.com.mx/pin/123/")).toBe("gallery");
+    expect(detectSource("https://pinterest.co.kr/pin/123/")).toBe("gallery");
+    expect(detectSource("https://www.pinterest.jp/pin/123/")).toBe("gallery");
   });
 
   it("does not misclassify lookalike hosts as Pinterest", () => {
     expect(detectSource("https://notpinterest.com/page")).toBe("webpage");
+  });
+
+  // gallery-dl reads any `pinterest.<anything>` host as Pinterest and sends its
+  // requests there, so these must never reach it as a gallery.
+  it("does not treat other hosts named pinterest as Pinterest", () => {
+    expect(detectSource("http://pinterest.local/pin/123")).toBe("webpage");
+    expect(detectSource("https://pinterest.attacker.example/pin/123")).toBe("webpage");
+    expect(detectSource("https://pinterest.com.attacker.example/pin/123")).toBe("webpage");
+    expect(detectSource("https://www.pinterest.example/pin/123")).toBe("webpage");
+    expect(detectSource("http://pinterest/pin/123")).toBe("webpage");
+    expect(detectSource("https://pin.it.attacker.example/abc")).toBe("webpage");
   });
 
   it("routes Spotify links to spotify", () => {

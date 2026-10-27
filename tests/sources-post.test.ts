@@ -125,6 +125,106 @@ describe("buildPostArgs", () => {
 describe("loadPostLink", () => {
   beforeEach(() => {
     vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.mocked(runWithWatchdog).mockReset();
+  });
+
+  const printed = (json: unknown) => ({ code: 0, stdout: JSON.stringify(json), stderr: "" });
+  // Where the pin.it fixture's short link leads, and what gallery-dl prints there (trimmed from a real run).
+  const PIN_URL =
+    "https://www.pinterest.com/pin/858146903966145191/sent/?sender=858147041405047427&invite_code=d7494ea7610c324ffc1ef6c20c4e29c4";
+  const PIN = [
+    [
+      2,
+      {
+        category: "pinterest",
+        subcategory: "pin",
+        id: "858146903966145191",
+        description: "Moraine Lake ~ Banff National Park, Lake Louise, Alberta, Canada",
+      },
+    ],
+    [
+      3,
+      "https://i.pinimg.com/originals/12/e0/f8/12e0f8109d25f31e195398ade852187a.jpg",
+      { category: "pinterest", id: "858146903966145191", extension: "jpg" },
+    ],
+  ];
+  const NOTHING = "Couldn't read this post: gallery-dl found nothing at this link.";
+
+  // Real `gallery-dl -j` output for a pin.it link: only the pin it stands for, as a queue record.
+  it("reads the pin a pin.it short link stands for", async () => {
+    vi.mocked(runWithWatchdog)
+      .mockResolvedValueOnce(printed(fixture("pinterest-pinit.json")))
+      .mockResolvedValueOnce(printed(PIN));
+    const ctx = await loadPostLink("https://pin.it/Hvt8hgT", {});
+    expect(ctx).toMatchObject({
+      url: "https://pin.it/Hvt8hgT",
+      key: "pinterest:858146903966145191",
+      site: "Pinterest",
+      title: "Moraine Lake ~ Banff National Park, Lake Louise, Alberta, Canada",
+    });
+    const calls = vi.mocked(runWithWatchdog).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[1][1].slice(-2)).toEqual(["--", PIN_URL]);
+  });
+
+  it("reads the post a Reddit share link stands for, with the same cookies", async () => {
+    const post = "https://www.reddit.com/r/Breadit/comments/1abcde/i_built_a_bread_oven/";
+    vi.mocked(runWithWatchdog)
+      .mockResolvedValueOnce(printed([[6, post, { category: "reddit", subcategory: "redirect" }]]))
+      .mockResolvedValueOnce(printed(fixture("reddit-post.crafted.json")));
+    const ctx = await loadPostLink("https://www.reddit.com/r/Breadit/s/abc456GHIJ", { cookiesFromBrowser: "firefox" });
+    expect(ctx).toMatchObject({ url: "https://www.reddit.com/r/Breadit/s/abc456GHIJ", key: "reddit:1abcde" });
+    const args = vi.mocked(runWithWatchdog).mock.calls[1][1];
+    expect(args).toContain("firefox");
+    expect(args.slice(-2)).toEqual(["--", post]);
+  });
+
+  it("follows a short link only once", async () => {
+    vi.mocked(runWithWatchdog)
+      .mockResolvedValueOnce(printed(fixture("pinterest-pinit.json")))
+      .mockResolvedValueOnce(printed([[6, "https://www.pinterest.com/pin/1/", {}]]));
+    await expect(loadPostLink("https://pin.it/Hvt8hgT", {})).rejects.toThrow(NOTHING);
+    expect(runWithWatchdog).toHaveBeenCalledTimes(2);
+  });
+
+  it("only follows a short link to a gallery site a pasted link could reach", async () => {
+    for (const target of [
+      "http://pinterest.local/pin/1/",
+      "https://pinterest.attacker.example/pin/1/",
+      "http://192.168.1.10/pin/1/",
+      "http://localhost:8080/",
+      "https://example.com/",
+      "https://www.youtube.com/watch?v=abc",
+      "file:///etc/passwd",
+      "--config=evil.conf",
+      "https://www.pinterest.com\\@192.168.1.10/",
+    ]) {
+      vi.mocked(runWithWatchdog).mockReset();
+      vi.mocked(runWithWatchdog).mockResolvedValueOnce(printed([[6, target, {}]]));
+      await expect(loadPostLink("https://pin.it/Hvt8hgT", {})).rejects.toThrow(NOTHING);
+      expect(runWithWatchdog).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("leaves queue records alone when the post itself, or an error, was found", async () => {
+    vi.mocked(runWithWatchdog).mockResolvedValueOnce(
+      printed([
+        [2, { category: "imgur", id: "a1" }],
+        [6, "https://imgur.com/a/b2", {}],
+      ]),
+    );
+    expect(await loadPostLink("https://imgur.com/a/a1", {})).toMatchObject({ key: "imgur:a1" });
+
+    vi.mocked(runWithWatchdog).mockResolvedValueOnce(
+      printed([
+        [6, PIN_URL, {}],
+        [-1, { error: "NotFoundError", message: "Requested pin could not be found" }],
+      ]),
+    );
+    await expect(loadPostLink("https://pin.it/Hvt8hgT", {})).rejects.toThrow(
+      "Couldn't read this post: Requested pin could not be found",
+    );
+    expect(runWithWatchdog).toHaveBeenCalledTimes(2);
   });
 
   it("runs gallery-dl and maps what it prints", async () => {
