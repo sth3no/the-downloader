@@ -157,6 +157,23 @@ describe("getWingetPath", () => {
     const { getWingetPath } = await loadWithWhere(`${missing}\r\n`, stable);
     await expect(getWingetPath()).resolves.toBe(stable);
   });
+
+  // winget is an app execution alias: Node can't stat it (existsSync is false),
+  // only lstat it. A link to nothing behaves the same way.
+  it("accepts winget's execution alias, from `where` and as the fallback", async (ctx) => {
+    let alias = path.join(dir, "alias-winget.exe");
+    try {
+      fs.symlinkSync(path.join(dir, "nowhere.exe"), alias, "file");
+    } catch {
+      // Windows without the right to create symlinks: the real alias, when winget is installed.
+      const apps = path.join(process.env.LOCALAPPDATA ?? "", "Microsoft", "WindowsApps");
+      if (!process.env.LOCALAPPDATA || !fs.readdirSync(apps).includes("winget.exe")) ctx.skip();
+      alias = path.join(apps, "winget.exe");
+    }
+    expect(fs.existsSync(alias)).toBe(false);
+    await expect((await loadWithWhere(`${alias}\r\n`)).getWingetPath()).resolves.toBe(alias);
+    await expect((await loadWithWhere("", alias)).getWingetPath()).resolves.toBe(alias);
+  });
 });
 
 describe("expandTilde", () => {
