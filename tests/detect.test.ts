@@ -27,6 +27,11 @@ describe("detectSource", () => {
     expect(detectSource("https://www.pinterest.com.mx/pin/123/")).toBe("gallery");
     expect(detectSource("https://pinterest.co.kr/pin/123/")).toBe("gallery");
     expect(detectSource("https://www.pinterest.jp/pin/123/")).toBe("gallery");
+    expect(detectSource("https://nl.pinterest.com/pin/123/")).toBe("gallery");
+    expect(detectSource("https://www.pinterest.nl/pin/123/")).toBe("gallery");
+    expect(detectSource("https://pinterest.co.in/pin/123/")).toBe("gallery");
+    expect(detectSource("https://www.pinterest.com.pe/pin/123/")).toBe("gallery");
+    expect(detectSource("https://www.pinterest.se/pin/123/")).toBe("gallery");
   });
 
   it("does not misclassify lookalike hosts as Pinterest", () => {
