@@ -11,13 +11,20 @@
 // (defaults to ../raycast-extensions). Then build, lint, commit and push there.
 
 import { execFileSync, execSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+const fail = (message) => {
+  console.error(message);
+  process.exit(1);
+};
+const git = (cwd, args) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const storeRepo = path.resolve(repo, process.argv[2] ?? "../raycast-extensions");
 const { name } = JSON.parse(readFileSync(path.join(repo, "package.json"), "utf8"));
+if (!/^[a-z0-9-]+$/.test(name)) fail(`Unexpected extension name in package.json: ${name}`);
 const target = path.join(storeRepo, "extensions", name);
 
 // Paths (top-level names) that never go to the Store.
@@ -36,18 +43,29 @@ const DEV_ONLY_SCRIPTS = ["test"];
 // Left in place in the target so the build there doesn't start from scratch.
 const KEEP_IN_TARGET = new Set(["node_modules", "dist", "raycast-env.d.ts"]);
 
-if (!existsSync(path.join(storeRepo, "extensions"))) {
-  console.error(`No raycast/extensions checkout at ${storeRepo}`);
-  process.exit(1);
+// The target folder gets emptied, so make sure it really is this extension's
+// folder in a raycast/extensions checkout, and that nothing there is unsaved.
+const isStoreCheckout = (() => {
+  try {
+    return (
+      realpathSync(git(storeRepo, ["rev-parse", "--show-toplevel"])) === realpathSync(storeRepo) &&
+      /raycast\/extensions|raycast-extensions/.test(git(storeRepo, ["remote", "-v"]))
+    );
+  } catch {
+    return false;
+  }
+})();
+if (!isStoreCheckout) fail(`No raycast/extensions checkout at ${storeRepo}`);
+if (existsSync(target) && path.dirname(realpathSync(target)) !== realpathSync(path.join(storeRepo, "extensions"))) {
+  fail(`${target} points outside the checkout's extensions folder`);
 }
+const targetChanges = git(storeRepo, ["status", "--porcelain", "--", `extensions/${name}`]);
+if (targetChanges) fail(`Commit or discard these changes in the Store copy first:\n${targetChanges}`);
 
 // The Store copy is what is committed here, so uncommitted edits (or deletions)
-// can't slip into it unreviewed.
-const changes = execFileSync("git", ["status", "--porcelain"], { cwd: repo, encoding: "utf8" }).trim();
-if (changes) {
-  console.error(`Commit or stash these changes first:\n${changes}`);
-  process.exit(1);
-}
+// can't slip into it unreviewed. Untracked files are never copied.
+const changes = git(repo, ["status", "--porcelain", "--untracked-files=no"]);
+if (changes) fail(`Commit or stash these changes first:\n${changes}`);
 
 const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: repo, encoding: "utf8" })
   .split("\0")
