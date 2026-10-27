@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { LocalStorage } from "@raycast/api";
 import { DownloadSession } from "../src/lib/download-session";
 import {
+  HISTORY_LIMIT,
   HistoryEntry,
   addEntry,
   clearHistory,
@@ -271,5 +272,85 @@ describe("storage", () => {
   it("ignores an undefined entry", async () => {
     await recordDownload(undefined);
     expect(await loadHistory()).toEqual([]);
+  });
+
+  // Another command's write that started from the list before a Remove or
+  // Clear History mustn't bring the deleted entries back.
+  it("drops cleared entries a download's write brought back, even with the History command gone", async () => {
+    await recordDownload(entry("old"));
+    const real = LocalStorage.setItem.bind(LocalStorage);
+    let cleared = false;
+    // The download has read ["old"] and is about to write ["new", "old"] when
+    // Clear History runs in the History command, which then closes before its
+    // own check.
+    const spy = vi.spyOn(LocalStorage, "setItem").mockImplementation(async (key: string, value: string) => {
+      if (key === "download-history-v1" && !cleared) {
+        cleared = true;
+        await real("download-history-deletions-v1", JSON.stringify({ clearedAt: Date.now(), removed: ["old"] }));
+        await real("download-history-v1", "[]");
+      }
+      return real(key, value);
+    });
+    try {
+      await recordDownload(entry("new"));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await ids()).toEqual(["new"]);
+  });
+
+  it("re-clears entries another command's write brought back, keeping the newer ones", async () => {
+    await recordDownload(entry("old"));
+    await clearHistory();
+    // Written by another command from the list it read before the clear.
+    await staleWrite(["later", "old"]);
+    await vi.waitFor(async () => expect(await ids()).toEqual(["later"]), { timeout: 2000 });
+  });
+
+  it("remembers every entry of a full history it cleared, and the ones removed before", async () => {
+    const full = Array.from({ length: HISTORY_LIMIT }, (_, i) => `e${i}`);
+    await staleWrite(full);
+    await LocalStorage.setItem("download-history-deletions-v1", JSON.stringify({ clearedAt: 0, removed: ["gone"] }));
+    await clearHistory();
+    const { removed } = parseDeletions(await LocalStorage.getItem<string>("download-history-deletions-v1"));
+    expect(removed.sort()).toEqual(["gone", ...full].sort());
+  });
+});
+
+// Each command (a download, the History command) runs its own copy of the
+// module, with its own write queue; only LocalStorage is shared.
+describe("storage across commands", () => {
+  beforeEach(async () => {
+    await LocalStorage.clear();
+    vi.doMock("@raycast/api", () => ({ LocalStorage }));
+  });
+  afterEach(() => vi.doUnmock("@raycast/api"));
+
+  const command = async () => {
+    vi.resetModules();
+    return import("../src/lib/history");
+  };
+
+  it("keeps the history cleared when a download's write was already under way", async () => {
+    const download = await command();
+    const history = await command();
+    await download.recordDownload(entry("old"));
+    const real = LocalStorage.setItem.bind(LocalStorage);
+    let clearing: Promise<unknown> | undefined;
+    // The download has read ["old"] and is about to write ["new", "old"] when
+    // the History command clears the history.
+    const spy = vi.spyOn(LocalStorage, "setItem").mockImplementation(async (key: string, value: string) => {
+      if (key === "download-history-v1" && !clearing) {
+        clearing = history.clearHistory();
+        await clearing;
+      }
+      return real(key, value);
+    });
+    try {
+      await download.recordDownload(entry("new"));
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await history.loadHistory()).map((e) => e.id)).toEqual(["new"]);
   });
 });
