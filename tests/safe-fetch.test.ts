@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import { getEventListeners } from "node:events";
 import http from "node:http";
 import zlib from "node:zlib";
 import { AddressInfo } from "node:net";
@@ -225,6 +226,64 @@ describe("safeFetch", () => {
     const pending = safeFetch(`http://s.test:${port}/stall`, { ...onlyLoopback, signal: controller.signal });
     controller.abort();
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  // A lookup can hang (a dead resolver, a captive network); the deadline and a stop still end the request.
+  const neverResolves = () => new Promise<never>(() => undefined);
+
+  it("gives up on a name that never resolves", async () => {
+    await expect(safeFetch("http://hung.test/", { resolve: neverResolves, timeoutMs: 20 })).rejects.toThrow(
+      "The page took too long to load.",
+    );
+  });
+
+  it("can be stopped while the name is still resolving", async () => {
+    const controller = new AbortController();
+    const pending = safeFetch("http://hung.test/", { resolve: neverResolves, signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await expect(
+      safeFetch("http://hung.test/", { resolve: neverResolves, signal: AbortSignal.abort() }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    // Stopped before a check that fails: still a stop, and the failed check doesn't go unhandled.
+    await expect(safeFetch("http://router.local/", { signal: AbortSignal.abort() })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+  });
+
+  it("stops listening for a stop once the name resolves, so redirects don't pile listeners up", async () => {
+    routes["/hop"] = (res) => res.writeHead(302, { location: "/hop-end" }).end();
+    routes["/hop-end"] = (res) => res.writeHead(200, { "content-type": "text/html" }).end("ok");
+    // Every abort listener added while a lookup is in progress, and how many of them each later lookup found attached.
+    const added: [EventTarget, unknown][] = [];
+    const stillAttached = () =>
+      added.filter(([signal, listener]) => getEventListeners(signal, "abort").includes(listener as () => void)).length;
+    const attachedAtLookup: number[] = [];
+    let lookingUp = false;
+    const resolve = async () => {
+      attachedAtLookup.push(stillAttached());
+      lookingUp = true;
+      await new Promise((r) => setTimeout(r, 5));
+      lookingUp = false;
+      return [{ address: "127.0.0.1", family: 4 as const }];
+    };
+    const { addEventListener } = EventTarget.prototype;
+    const spy = vi.spyOn(AbortSignal.prototype, "addEventListener").mockImplementation(function (
+      this: AbortSignal,
+      ...args: Parameters<EventTarget["addEventListener"]>
+    ) {
+      if (lookingUp && args[0] === "abort") added.push([this, args[1]]);
+      return addEventListener.apply(this, args);
+    });
+    try {
+      const response = await safeFetch(`http://s.test:${port}/hop`, { ...onlyLoopback, resolve });
+      expect(response.body.toString()).toBe("ok");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(added.length).toBeGreaterThan(0);
+    expect(attachedAtLookup).toEqual([0, 0]);
+    expect(stillAttached()).toBe(0);
   });
 
   it("decompresses gzip and brotli", async () => {
