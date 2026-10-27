@@ -1,56 +1,76 @@
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 import {
   Action,
   ActionPanel,
   Clipboard,
+  Color,
   Detail,
   Icon,
   Toast,
   environment,
+  getPreferenceValues,
   open,
   openExtensionPreferences,
   showToast,
 } from "@raycast/api";
 import { ExecaError, execa } from "execa";
 import { getHomebrewPath, getWingetPath, isMac, isWindows } from "../utils.js";
-import { homebrewFormulaFor, isManagedTool, isWingetUpdateNotApplicable, wingetIdFor } from "../lib/tools.js";
+import {
+  homebrewFormulaFor,
+  isManagedTool,
+  isWingetUpdateNotApplicable,
+  toolInfoFor,
+  wingetIdFor,
+} from "../lib/tools.js";
 import { downloadSpotdl, isAppleSilicon, isRosettaInstalled } from "../lib/managed-binary.js";
+import { SPOTDL_SETUP_GUIDE_URL } from "../lib/docs.js";
 import { resetWingetPackagesCache } from "../lib/binary.js";
 
-const macOSInstallGuide = (executable: string) => `
-# 🚨 Error: \`${executable}\` is not installed
-This extension depends on a command-line utility that is not detected on your system. You must install it to continue.
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
-If you have homebrew installed, simply press **⏎** to have this extension install it for you. Since \`${executable}\` is a heavy library,
-**it can take up to 2 minutes to install**.
+const intro = (executable: string) => {
+  const info = toolInfoFor(executable);
+  return `# Install ${info.name}
 
-**Please do not close Raycast while the installation is in progress.**
+The Downloader uses **${info.name}**${info.purpose ? `, which ${lowerFirst(info.purpose)}` : ""}. It isn't installed yet.`;
+};
 
-To install homebrew, visit [this link](https://brew.sh)
+const macOSInstallGuide = (executable: string) => `${intro(executable)}
+
+Press **↵** to install it with Homebrew. Bigger tools can take a couple of minutes, so keep Raycast open until it finishes.
+
+---
+
+**Prefer the terminal?**
+
+\`\`\`bash
+brew install ${homebrewFormulaFor(executable)}
+\`\`\`
+
+No Homebrew yet? Get it at [brew.sh](https://brew.sh).
 `;
 
-const windowsInstallGuide = (executable: string, wingetId: string) => `# 🚨 Error: \`${executable}\` is not installed
+const windowsInstallGuide = (executable: string, wingetId: string) => `${intro(executable)}
 
-Please press **⏎** to have this extension install it for you. Since these are heavy libraries, **it can take up to 2 minutes to install**.
-${executable === "ffmpeg" || executable === "ffprobe" ? "\n**Note:** `yt-dlp` bundles `ffmpeg` and `ffprobe` on Windows.\n" : ""}
-## Windows Manual Installation Guide
+Press **↵** to install it with winget. Bigger tools can take a couple of minutes, so keep Raycast open until it finishes.
+${executable === "ffmpeg" || executable === "ffprobe" ? "\n_On Windows, `ffmpeg` and `ffprobe` come from yt-dlp's `yt-dlp.FFmpeg` package._\n" : ""}
+---
 
-You can use the built-in Windows package manager, \`winget\`.
+**Prefer the terminal?**
 
 \`\`\`bash
 winget install --id=${wingetId} -e
 \`\`\`
 `;
 
-const genericManagedInstallGuide = (executable: string) => `
-# 🚨 Error: \`${executable}\` is not installed
+const genericManagedInstallGuide = (executable: string) => `${intro(executable)}
 
-This extension can download \`${executable}\` for you — a one-time, self-contained binary (~40 MB). No Homebrew or Python required.
+The Downloader can download it for you: a one-time, self-contained binary (about 40 MB). No Homebrew or Python needed.
 
-Press **⏎** to download it now. **Please do not close Raycast while the download is in progress.**
+Press **↵** to download it now, and keep Raycast open until it finishes.
 `;
 
-const SPOTDL_SETUP_GUIDE_URL = "https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md";
+const BUSY_NOTE = "> **Installing…** This can take a couple of minutes. Keep Raycast open until it finishes.\n\n";
 
 const spotdlInstallGuide = (installed: boolean) => {
   const installBlock = installed
@@ -61,7 +81,7 @@ const spotdlInstallGuide = (installed: boolean) => {
           : ""
       }`;
   return `
-# ${installed ? "✅ spotDL installed" : "🚨 spotDL is not installed"}
+# ${installed ? "spotDL is installed" : "Install spotDL"}
 
 ${installBlock}
 
@@ -69,9 +89,9 @@ ${installBlock}
 
 ## Connect your Spotify account
 
-spotDL needs Spotify API credentials to look up track metadata. Without them, downloads fail with _"Could not get session auth tokens"_ — Spotify's anonymous flow is unreliable. The one-time setup takes about a minute:
+spotDL needs Spotify API credentials to look up track metadata, so Spotify downloads start only once they're set (spotDL's anonymous flow is too unreliable). The one-time setup takes about a minute:
 
-1. Go to https://developer.spotify.com/dashboard and log in with any Spotify account.
+1. Go to https://developer.spotify.com/dashboard and log in with your Spotify account. It needs **Spotify Premium**: Spotify only lets developer apps work while their owner has Premium.
 2. Click **Create app**. Use any name and description. For **Redirect URI**, enter \`http://127.0.0.1:9900/\` (this is the address spotDL opens during user-auth; for public-only downloads any value works, but matching this default lets you flip on private-playlist support later). Tick **Web API**. Save.
 3. Open your new app, then **Settings**. Copy the **Client ID**. Click **View client secret** and copy the **Client Secret**.
 4. Open this extension's preferences (⌘,) and paste them into **Spotify: Client ID** and **Spotify: Client Secret**.
@@ -83,27 +103,91 @@ Something not working? Open the [setup guide & troubleshooting](${SPOTDL_SETUP_G
 `;
 };
 
-export default function Installer({ executable, onRefresh }: { executable: string; onRefresh: () => void }) {
+function InstallerMetadata({ executable, installed }: { executable: string; installed: boolean }) {
+  const info = toolInfoFor(executable);
+  const managed = isManagedTool(executable);
+  const prefs = getPreferenceValues<ExtensionPreferences>();
+  const hasSpotifyCredentials = Boolean(prefs.spotifyClientId?.trim() && prefs.spotifyClientSecret?.trim());
+  return (
+    <Detail.Metadata>
+      <Detail.Metadata.Label title="Tool" text={info.name} icon={Icon.Terminal} />
+      {info.purpose && <Detail.Metadata.Label title="Used For" text={info.purpose} />}
+      <Detail.Metadata.TagList title="Status">
+        <Detail.Metadata.TagList.Item
+          text={installed ? "Installed" : "Not Installed"}
+          color={installed ? Color.Green : Color.Orange}
+        />
+      </Detail.Metadata.TagList>
+      <Detail.Metadata.Separator />
+      <Detail.Metadata.Label title="Installs With" text={managed ? "Direct download" : isMac ? "Homebrew" : "winget"} />
+      {!managed && (
+        <Detail.Metadata.Label
+          title="Package"
+          text={isMac ? homebrewFormulaFor(executable) : wingetIdFor(executable)}
+        />
+      )}
+      {executable === "spotdl" && (
+        <Detail.Metadata.TagList title="Spotify Credentials">
+          <Detail.Metadata.TagList.Item
+            text={hasSpotifyCredentials ? "Set" : "Missing"}
+            color={hasSpotifyCredentials ? Color.Green : Color.Orange}
+          />
+        </Detail.Metadata.TagList>
+      )}
+      {info.homepage && (
+        <Detail.Metadata.Link title="Website" text={info.homepage.replace(/^https:\/\//, "")} target={info.homepage} />
+      )}
+    </Detail.Metadata>
+  );
+}
+
+/**
+ * Set-up screen for a missing tool. `alternatives` are actions to download as
+ * another type whose tools are already installed, so a missing tool never
+ * traps the user (e.g. no monolith, but Video would work).
+ */
+export default function Installer({
+  executable,
+  onRefresh,
+  alternatives,
+}: {
+  executable: string;
+  onRefresh: () => void;
+  alternatives?: ReactNode;
+}) {
   const [installed, setInstalled] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const note = busy ? BUSY_NOTE : "";
   if (isManagedTool(executable)) {
     return (
       <Detail
+        isLoading={busy}
         actions={
           <ManagedInstall
             executable={executable}
             installed={installed}
             onInstalled={() => setInstalled(true)}
             onContinue={onRefresh}
+            onBusyChange={setBusy}
           />
         }
-        markdown={executable === "spotdl" ? spotdlInstallGuide(installed) : genericManagedInstallGuide(executable)}
+        markdown={
+          note + (executable === "spotdl" ? spotdlInstallGuide(installed) : genericManagedInstallGuide(executable))
+        }
+        metadata={<InstallerMetadata executable={executable} installed={installed} />}
       />
     );
   }
   return (
     <Detail
-      actions={<AutoInstall executable={executable} onRefresh={onRefresh} />}
-      markdown={isMac ? macOSInstallGuide(executable) : windowsInstallGuide(executable, wingetIdFor(executable))}
+      isLoading={busy}
+      actions={
+        <AutoInstall executable={executable} onRefresh={onRefresh} onBusyChange={setBusy} alternatives={alternatives} />
+      }
+      markdown={
+        note + (isMac ? macOSInstallGuide(executable) : windowsInstallGuide(executable, wingetIdFor(executable)))
+      }
+      metadata={<InstallerMetadata executable={executable} installed={false} />}
     />
   );
 }
@@ -113,13 +197,19 @@ function ManagedInstall({
   installed,
   onInstalled,
   onContinue,
+  onBusyChange,
 }: {
   executable: string;
   installed: boolean;
   onInstalled: () => void;
   onContinue: () => void;
+  onBusyChange: (busy: boolean) => void;
 }) {
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoadingState] = useState(false);
+  const setIsLoading = (value: boolean) => {
+    setIsLoadingState(value);
+    onBusyChange(value);
+  };
 
   const setupGuideAction = (
     <Action title="Open Setup Guide" icon={Icon.QuestionMarkCircle} onAction={() => open(SPOTDL_SETUP_GUIDE_URL)} />
@@ -225,8 +315,22 @@ function ManagedInstall({
   );
 }
 
-function AutoInstall({ executable, onRefresh }: { executable: string; onRefresh: () => void }) {
-  const [isLoading, setIsLoading] = useState(false);
+function AutoInstall({
+  executable,
+  onRefresh,
+  onBusyChange,
+  alternatives,
+}: {
+  executable: string;
+  onRefresh: () => void;
+  onBusyChange: (busy: boolean) => void;
+  alternatives?: ReactNode;
+}) {
+  const [isLoading, setIsLoadingState] = useState(false);
+  const setIsLoading = (value: boolean) => {
+    setIsLoadingState(value);
+    onBusyChange(value);
+  };
 
   return (
     <ActionPanel>
@@ -376,6 +480,7 @@ function AutoInstall({ executable, onRefresh }: { executable: string; onRefresh:
           }}
         />
       )}
+      {alternatives && <ActionPanel.Section title="Instead">{alternatives}</ActionPanel.Section>}
     </ActionPanel>
   );
 }

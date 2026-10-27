@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectSource } from "../src/lib/detect";
+import { detectSource, hostnameOf } from "../src/lib/detect";
 
 describe("detectSource", () => {
   it("routes known video domains to video", () => {
@@ -21,10 +21,32 @@ describe("detectSource", () => {
     expect(detectSource("https://pinterest.de/user/")).toBe("gallery");
     expect(detectSource("https://www.pinterest.co.uk/user/")).toBe("gallery");
     expect(detectSource("https://in.pinterest.com/user/")).toBe("gallery");
+    expect(detectSource("https://cz.pinterest.com/pin/123/")).toBe("gallery");
+    expect(detectSource("https://pinterest.ca/pin/123/")).toBe("gallery");
+    expect(detectSource("https://www.pinterest.com.au/pin/123/")).toBe("gallery");
+    expect(detectSource("https://www.pinterest.com.mx/pin/123/")).toBe("gallery");
+    expect(detectSource("https://pinterest.co.kr/pin/123/")).toBe("gallery");
+    expect(detectSource("https://www.pinterest.jp/pin/123/")).toBe("gallery");
+    expect(detectSource("https://nl.pinterest.com/pin/123/")).toBe("gallery");
+    expect(detectSource("https://www.pinterest.nl/pin/123/")).toBe("gallery");
+    expect(detectSource("https://pinterest.co.in/pin/123/")).toBe("gallery");
+    expect(detectSource("https://www.pinterest.com.pe/pin/123/")).toBe("gallery");
+    expect(detectSource("https://www.pinterest.se/pin/123/")).toBe("gallery");
   });
 
   it("does not misclassify lookalike hosts as Pinterest", () => {
     expect(detectSource("https://notpinterest.com/page")).toBe("webpage");
+  });
+
+  // gallery-dl reads any `pinterest.<anything>` host as Pinterest and sends its
+  // requests there, so these must never reach it as a gallery.
+  it("does not treat other hosts named pinterest as Pinterest", () => {
+    expect(detectSource("http://pinterest.local/pin/123")).toBe("webpage");
+    expect(detectSource("https://pinterest.attacker.example/pin/123")).toBe("webpage");
+    expect(detectSource("https://pinterest.com.attacker.example/pin/123")).toBe("webpage");
+    expect(detectSource("https://www.pinterest.example/pin/123")).toBe("webpage");
+    expect(detectSource("http://pinterest/pin/123")).toBe("webpage");
+    expect(detectSource("https://pin.it.attacker.example/abc")).toBe("webpage");
   });
 
   it("routes Spotify links to spotify", () => {
@@ -46,5 +68,14 @@ describe("detectSource", () => {
 
   it("routes an unparseable URL to webpage", () => {
     expect(detectSource("not a url")).toBe("webpage");
+  });
+});
+
+describe("hostnameOf", () => {
+  it("reads the host with or without a scheme, even when the host itself starts with 'http'", () => {
+    expect(hostnameOf("https://www.youtube.com/watch?v=abc")).toBe("youtube.com");
+    expect(hostnameOf("youtu.be/abc")).toBe("youtu.be");
+    expect(hostnameOf("httpbin.org/get")).toBe("httpbin.org");
+    expect(hostnameOf("not a url")).toBe("");
   });
 });

@@ -14,12 +14,16 @@ vi.mock("execa", () => ({ execa: vi.fn(async () => ({ stdout: "" })) }));
 
 import * as fs from "node:fs";
 import * as crypto from "node:crypto";
+import { execa } from "execa";
 import {
   downloadSpotdl,
+  getInstalledVersion,
   isAppleSilicon,
+  isManagedBinary,
   isRosettaInstalled,
   resolveSpotdlAsset,
   RosettaRequiredError,
+  needsRosetta,
 } from "../src/lib/managed-binary";
 
 const assets = [
@@ -129,11 +133,10 @@ describe("downloadSpotdl integrity verification", () => {
     expect(vi.mocked(fs.writeFileSync)).not.toHaveBeenCalled();
   });
 
-  it("proceeds without verification when no digest is published", async () => {
+  it("refuses to install when no digest is published, since the bytes can't be verified", async () => {
     stubFetch({ digest: undefined });
-    const p = await downloadSpotdl("/tmp/support");
-    expect(p).toContain("spotdl");
-    expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalled();
+    await expect(downloadSpotdl("/tmp/support")).rejects.toThrow(/verify/i);
+    expect(vi.mocked(fs.writeFileSync)).not.toHaveBeenCalled();
   });
 
   it("refuses a download URL on an unexpected host (before fetching the asset)", async () => {
@@ -187,5 +190,56 @@ describe("isRosettaInstalled", () => {
     setArch("darwin", "arm64");
     vi.mocked(fs.existsSync).mockReturnValue(false);
     expect(isRosettaInstalled()).toBe(false);
+  });
+});
+
+describe("needsRosetta", () => {
+  const intel = () => {
+    const b = Buffer.alloc(32);
+    b.writeUInt32LE(0xfeedfacf, 0);
+    b.writeUInt32LE(0x01000007, 4);
+    return b;
+  };
+  const arm = () => {
+    const b = Buffer.alloc(32);
+    b.writeUInt32LE(0xfeedfacf, 0);
+    b.writeUInt32LE(0x0100000c, 4);
+    return b;
+  };
+  const script = () => Buffer.from("#!/opt/homebrew/opt/python/bin/python3\n");
+  const noRosetta = { appleSilicon: true, rosetta: false };
+
+  it("requires Rosetta for an Intel-only spotDL on an Apple Silicon Mac without it, wherever it lives", () => {
+    expect(needsRosetta("/Users/me/bin/spotdl", noRosetta, intel)).toBe(true);
+  });
+
+  it("leaves native spotDL builds and Homebrew's Python script alone", () => {
+    expect(needsRosetta("/opt/homebrew/bin/spotdl", noRosetta, script)).toBe(false);
+    expect(needsRosetta("/Users/me/bin/spotdl", noRosetta, arm)).toBe(false);
+    expect(needsRosetta("/missing/spotdl", noRosetta, () => undefined)).toBe(false);
+  });
+
+  it("is false when Rosetta is installed or the Mac is Intel", () => {
+    expect(needsRosetta("/x/spotdl", { appleSilicon: true, rosetta: true }, intel)).toBe(false);
+    expect(needsRosetta("/x/spotdl", { appleSilicon: false, rosetta: false }, intel)).toBe(false);
+  });
+});
+
+describe("isManagedBinary", () => {
+  const support = "/Users/me/Library/Application Support/com.raycast.macos/extensions/the-downloader";
+
+  it("is true only for a binary inside the extension's support folder", () => {
+    expect(isManagedBinary(`${support}/spotdl`, support)).toBe(true);
+    expect(isManagedBinary("/opt/homebrew/bin/spotdl", support)).toBe(false);
+    // A sibling folder that merely shares the prefix isn't the support folder.
+    expect(isManagedBinary(`${support}-other/spotdl`, support)).toBe(false);
+  });
+});
+
+describe("getInstalledVersion", () => {
+  it("bounds `spotdl --version` with a timeout so a stuck binary can't hang the check", async () => {
+    vi.mocked(execa).mockResolvedValueOnce({ stdout: "4.5.2" } as never);
+    await expect(getInstalledVersion("/x/spotdl")).resolves.toBe("4.5.2");
+    expect(vi.mocked(execa).mock.calls.at(-1)?.[2]).toMatchObject({ timeout: expect.any(Number) });
   });
 });

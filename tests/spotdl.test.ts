@@ -12,7 +12,7 @@ import { invalidateSpotipyCacheIfStale } from "../src/lib/spotdl-cache.js";
 import { buildSpotdlArgs, runSpotdlDownload, summarizeSpotdlError, SpotdlDownloadError } from "../src/lib/spotdl";
 
 function fakeChild() {
-  const child = new EventEmitter() as any;
+  const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => void };
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
   child.kill = vi.fn(() => child.emit("close", null));
@@ -192,7 +192,7 @@ describe("runSpotdlDownload", () => {
 
     const onProgress = vi.fn();
     const promise = runSpotdlDownload(
-      "/support/spotdl",
+      "/usr/local/bin/spotdl",
       { url: "https://open.spotify.com/playlist/x", destination: "/tmp", format: "mp3", ffmpegPath: "/ff" },
       onProgress,
     );
@@ -209,7 +209,7 @@ describe("runSpotdlDownload", () => {
     (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
 
     const promise = runSpotdlDownload(
-      "/support/spotdl",
+      "/usr/local/bin/spotdl",
       { url: "https://open.spotify.com/track/bad", destination: "/tmp", format: "mp3", ffmpegPath: "/ff" },
       vi.fn(),
     );
@@ -225,7 +225,7 @@ describe("runSpotdlDownload", () => {
     (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
 
     const promise = runSpotdlDownload(
-      "/support/spotdl",
+      "/usr/local/bin/spotdl",
       { url: "https://open.spotify.com/playlist/x", destination: "/tmp", format: "mp3", ffmpegPath: "/ff" },
       vi.fn(),
     );
@@ -255,7 +255,7 @@ describe("runSpotdlDownload", () => {
       (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
 
       const promise = runSpotdlDownload(
-        "/support/spotdl",
+        "/usr/local/bin/spotdl",
         { url: "https://open.spotify.com/track/x", destination: "/tmp", format: "mp3", ffmpegPath: "/ff" },
         vi.fn(),
       );
@@ -280,7 +280,7 @@ describe("runSpotdlDownload", () => {
     vi.mocked(invalidateSpotipyCacheIfStale).mockClear();
 
     const promise = runSpotdlDownload(
-      "/support/spotdl",
+      "/usr/local/bin/spotdl",
       {
         url: "https://open.spotify.com/track/x",
         destination: "/tmp",
@@ -294,7 +294,7 @@ describe("runSpotdlDownload", () => {
       vi.fn(),
     );
 
-    expect(invalidateSpotipyCacheIfStale).toHaveBeenCalledWith("/support", "id", "secret", true);
+    expect(invalidateSpotipyCacheIfStale).toHaveBeenCalledWith("/support", "id", "secret", true, undefined);
 
     child.emit("close", 0);
     await promise;
@@ -306,7 +306,7 @@ describe("runSpotdlDownload", () => {
     vi.mocked(invalidateSpotipyCacheIfStale).mockClear();
 
     const promise = runSpotdlDownload(
-      "/support/spotdl",
+      "/usr/local/bin/spotdl",
       { url: "https://open.spotify.com/track/x", destination: "/tmp", format: "mp3", ffmpegPath: "/ff" },
       vi.fn(),
     );
@@ -325,7 +325,7 @@ describe("runSpotdlDownload", () => {
     (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
 
     const promise = runSpotdlDownload(
-      "/support/spotdl",
+      "/usr/local/bin/spotdl",
       { url: "https://open.spotify.com/track/bad", destination: "/tmp", format: "mp3", ffmpegPath: "/ff" },
       vi.fn(),
     );
@@ -341,7 +341,7 @@ describe("runSpotdlDownload", () => {
     controller.abort();
     await expect(
       runSpotdlDownload(
-        "/support/spotdl",
+        "/usr/local/bin/spotdl",
         {
           url: "https://open.spotify.com/track/x",
           destination: "/tmp",
@@ -360,7 +360,7 @@ describe("runSpotdlDownload", () => {
     (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
 
     const promise = runSpotdlDownload(
-      "/support/spotdl",
+      "/usr/local/bin/spotdl",
       {
         url: "https://open.spotify.com/playlist/x",
         destination: "/tmp",
@@ -386,6 +386,15 @@ describe("summarizeSpotdlError", () => {
     expect(s.title.toLowerCase()).toContain("forbidden");
     expect(s.message.toLowerCase()).toContain("private");
     expect(s.action).toBe("open-setup-guide");
+  });
+
+  it("only calls Spotify API errors a 403 or 404, not any 'forbidden' or 'not found' in the output", () => {
+    // spotDL downloads audio from YouTube with yt-dlp, and reports missing tools;
+    // neither is about the playlist's visibility.
+    expect(summarizeSpotdlError("ERROR: unable to download video data: HTTP Error 403: Forbidden").title).not.toMatch(
+      /Spotify: 403/,
+    );
+    expect(summarizeSpotdlError("FFmpegError: ffmpeg not found at /usr/bin/ffmpeg").title).not.toMatch(/Spotify: 404/);
   });
 
   it("maps 404 Not Found to an enable-user-auth hint", () => {

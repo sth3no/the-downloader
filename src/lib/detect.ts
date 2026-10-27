@@ -1,4 +1,5 @@
 import { SourceType } from "../types.js";
+import { normalizeUrl } from "./url.js";
 
 const GALLERY_DOMAINS = [
   "reddit.com",
@@ -15,15 +16,63 @@ const GALLERY_DOMAINS = [
 ];
 
 /**
- * Pinterest needs its own check: it serves the same boards from regional TLDs
- * (pinterest.de, pinterest.co.uk, …) and from `pin.it` short links, none of
- * which a fixed "pinterest.com" entry would match. Match `pin.it` exactly, or
- * any host with a `pinterest` domain label (covers regional TLDs and country
- * subdomains like in.pinterest.com) — while leaving lookalikes such as
- * "notpinterest.com" alone.
+ * Pinterest serves the same boards from regional domains (pinterest.de,
+ * pinterest.co.uk, …), from country subdomains (in.pinterest.com) and from
+ * `pin.it` short links. Only these real domains count: gallery-dl reads any
+ * `pinterest.<anything>` host as Pinterest and sends its requests to that host,
+ * so a name such as `pinterest.local` would reach the local network. The list
+ * is yt-dlp's (its Pinterest extractor keeps it up to date) plus pinterest.se.
  */
+const PINTEREST_DOMAINS = [
+  "at",
+  "be",
+  "ca",
+  "ch",
+  "cl",
+  "co",
+  "co.at",
+  "co.in",
+  "co.kr",
+  "co.nz",
+  "co.uk",
+  "com",
+  "com.au",
+  "com.bo",
+  "com.ec",
+  "com.mx",
+  "com.pe",
+  "com.py",
+  "com.uy",
+  "com.vn",
+  "de",
+  "dk",
+  "ec",
+  "es",
+  "fr",
+  "hu",
+  "id",
+  "ie",
+  "in",
+  "info",
+  "it",
+  "jp",
+  "kr",
+  "mx",
+  "nl",
+  "nz",
+  "pe",
+  "ph",
+  "pt",
+  "ru",
+  "se",
+  "th",
+  "tw",
+  "uk",
+  "vn",
+].map((tld) => `pinterest.${tld}`);
+
 function isPinterest(host: string): boolean {
-  return host === "pin.it" || host.split(".").includes("pinterest");
+  return host === "pin.it" || matches(host, PINTEREST_DOMAINS);
 }
 
 const SPOTIFY_DOMAINS = ["open.spotify.com"];
@@ -43,10 +92,10 @@ const VIDEO_DOMAINS = [
   "streamable.com",
 ];
 
-function hostnameOf(url: string): string {
+/** The URL's host without `www.`, with or without a scheme; "" when it can't be parsed. */
+export function hostnameOf(url: string): string {
   try {
-    const withProtocol = url.startsWith("http") ? url : `https://${url}`;
-    return new URL(withProtocol).hostname.replace(/^www\./, "");
+    return new URL(normalizeUrl(url)).hostname.replace(/^www\./, "");
   } catch {
     return "";
   }
@@ -54,6 +103,14 @@ function hostnameOf(url: string): string {
 
 function matches(host: string, domains: string[]): boolean {
   return domains.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+/**
+ * True for YouTube links. yt-dlp needs a JavaScript runtime (Deno) to read
+ * YouTube's player; other sites download without one.
+ */
+export function needsJsRuntime(url: string): boolean {
+  return matches(hostnameOf(url), ["youtube.com", "youtu.be"]);
 }
 
 /**

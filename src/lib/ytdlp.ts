@@ -1,6 +1,9 @@
+import fs from "node:fs";
+import path from "node:path";
 import { execa } from "execa";
 import { Video } from "../types.js";
-import { DEFAULT_IDLE_MS, runWithWatchdog } from "./run.js";
+import { PROGRESS_TEMPLATE, YtdlpEvent, parseYtdlpLine } from "./progress.js";
+import { AbortError, DEFAULT_IDLE_MS, RunResult, runWithWatchdog } from "./run.js";
 
 /**
  * Pull the first JSON object out of yt-dlp's stdout. yt-dlp can emit `[debug]`
@@ -30,7 +33,7 @@ export async function fetchVideoInfo(
   url: string,
   forceIpv4: boolean,
   denoPath?: string,
-  opts?: { signal?: AbortSignal; timeoutMs?: number },
+  opts?: { signal?: AbortSignal; timeoutMs?: number; knownSitesOnly?: boolean },
 ): Promise<Video> {
   const result = await execa(
     ytdlPath,
@@ -39,10 +42,10 @@ export async function fetchVideoInfo(
       denoPath ? "--js-runtimes" : "",
       denoPath ? `deno:${denoPath}` : "",
       "--no-playlist",
+      ...(opts?.knownSitesOnly ? KNOWN_SITES_ONLY : []),
       "--no-warnings",
       "--quiet",
       "--dump-json",
-      "--format-sort=resolution,ext,tbr",
       url,
     ].filter(Boolean),
     {
@@ -54,16 +57,31 @@ export async function fetchVideoInfo(
   return extractDumpJson(result.stdout);
 }
 
+const LIVE_STATUSES = new Set(["is_live", "is_upcoming", "post_live"]);
+
 /**
- * True when yt-dlp metadata marks the URL as a live (or upcoming/post-live)
- * stream. `live_status` is absent for extractors that never set it and an
- * explicit `null` for some that do — both mean "not live", so only a concrete
- * status other than "not_live" counts. (A `!== undefined` check alone treated
- * `null` as live and blocked ordinary downloads on those extractors.)
+ * True when yt-dlp metadata marks the URL as a stream that is live, upcoming,
+ * or over but not yet processed into a video. A recording of a past stream
+ * (`was_live`) is an ordinary video; an absent or `null` status means not live.
  */
 export function isLiveStream(video: Video): boolean {
-  return video.live_status !== undefined && video.live_status !== null && video.live_status !== "not_live";
+  return LIVE_STATUSES.has(video.live_status ?? "");
 }
+
+/** A download that yt-dlp skipped because the stream is live right now. */
+export class LiveStreamError extends Error {
+  constructor() {
+    super("Live streams are not supported");
+    this.name = "LiveStreamError";
+  }
+}
+
+/**
+ * yt-dlp's site extractors only, without the generic page reader: for links the
+ * AI picked, so a page can't point yt-dlp at whatever it embeds or redirects to
+ * (a router, cloud metadata).
+ */
+const KNOWN_SITES_ONLY = ["--use-extractors", "default,-generic"];
 
 export type VideoDownloadArgs = {
   url: string;
@@ -75,6 +93,8 @@ export type VideoDownloadArgs = {
   idleMs?: number;
   /** Aborting cancels the download mid-flight (used by the form's Stop action and unmount cleanup). */
   abortSignal?: AbortSignal;
+  /** Leave out yt-dlp's generic page reader (see `KNOWN_SITES_ONLY`). */
+  knownSitesOnly?: boolean;
 };
 
 /**
@@ -104,12 +124,33 @@ const FILEPATH_LINE_RE = new RegExp(`^${FILEPATH_TAG}(.+)$`);
  * title and live-status the form inspected, not the whole playlist. A pure
  * playlist URL (no video reference) still downloads every entry.
  *
+ * `--match-filter !is_live` skips a stream that is live right now, whichever
+ * command started the download: progress keeps arriving from a live stream, so
+ * the idle watchdog would never stop it. yt-dlp then exits 0 with a "does not
+ * pass filter" line, which `runVideoDownload` turns into a `LiveStreamError`
+ * when nothing was downloaded (a playlist keeps its other entries).
+ *
  * `--newline` makes yt-dlp terminate each progress update with a real newline.
  * On a pipe (non-TTY) it otherwise redraws progress with bare `\r`, which a
  * line-buffered reader would sit on until the download finished.
+ *
+ * `--progress-template` swaps the human progress line for raw byte counts,
+ * speed and ETA (see `PROGRESS_TEMPLATE`), which the download view charts.
+ * `--print` implies `--quiet`, which would also hide the `[info] … format(s)`,
+ * `[download] Destination` and `[Merger]` lines the view uses to tell streams
+ * and the merge step apart; `--no-quiet` (yt-dlp 2023.07+) brings them back.
  */
 export function buildVideoDownloadArgs(a: VideoDownloadArgs): string[] {
-  const args = ["-o", a.outputTemplate, "--ffmpeg-location", a.ffmpegPath, "--no-playlist"];
+  const args = [
+    "-o",
+    a.outputTemplate,
+    "--ffmpeg-location",
+    a.ffmpegPath,
+    "--no-playlist",
+    "--match-filter",
+    "!is_live",
+    ...(a.knownSitesOnly ? KNOWN_SITES_ONLY : []),
+  ];
   if (a.denoPath) {
     args.push("--js-runtimes", `deno:${a.denoPath}`);
   }
@@ -120,32 +161,81 @@ export function buildVideoDownloadArgs(a: VideoDownloadArgs): string[] {
     // `/best` covers sites that publish no audio-only stream.
     args.push("--format", "bestaudio/best", "--extract-audio", "--audio-format", target, "--audio-quality", "0");
   } else {
-    args.push("--format", downloadFormat, "--merge-output-format", target);
+    // "webm/mkv": when the selector had to fall back to streams WebM can't hold
+    // (e.g. H.264 + AAC), yt-dlp merges into mkv instead of failing the merge.
+    args.push("--format", downloadFormat, "--merge-output-format", target === "webm" ? "webm/mkv" : target);
   }
-  args.push("--progress", "--newline", "--print", `after_move:${FILEPATH_TAG}%(filepath)s`, a.url);
+  args.push(
+    "--no-quiet",
+    "--progress",
+    "--newline",
+    "--progress-template",
+    PROGRESS_TEMPLATE,
+    "--print",
+    `after_move:${FILEPATH_TAG}%(filepath)s`,
+    a.url,
+  );
   return args;
 }
 
 export type VideoDownloadResult = { filePath: string };
 
+/** `[download] Destination: …` — the file yt-dlp is writing a stream to. */
+const DESTINATION_RE = /^\[download\] Destination:\s*(.+)$/;
+
+/**
+ * After Stop, remove what yt-dlp leaves of the streams it was writing: the
+ * `.part` file, its `.ytdl` resume note and any `.part-Frag…` pieces. Only the
+ * named streams' leftovers go — never a finished file.
+ */
+export function removePartialDownloads(destinations: string[]): void {
+  for (const destination of destinations) {
+    const leftovers = [`${destination}.part`, `${destination}.ytdl`];
+    const fragmentPrefix = `${path.basename(destination)}.part-Frag`;
+    try {
+      for (const name of fs.readdirSync(path.dirname(destination))) {
+        if (name.startsWith(fragmentPrefix)) leftovers.push(path.join(path.dirname(destination), name));
+      }
+    } catch {
+      /* the folder is gone — nothing left to clean */
+    }
+    for (const leftover of leftovers) {
+      try {
+        fs.rmSync(leftover, { force: true });
+      } catch {
+        /* still locked or already gone */
+      }
+    }
+  }
+}
+
 /**
  * Run yt-dlp for a media download. `onProgress` receives the download percentage
- * as yt-dlp reports it. Resolves with the downloaded file path on a zero exit;
- * rejects with the stderr text on a non-zero exit, or with a watchdog error if
- * yt-dlp stalls. Progress and the `after_move:filepath` line are read from stdout.
+ * as yt-dlp reports it; `onEvent`, when given, receives every parsed progress,
+ * stream and post-processing event (see `parseYtdlpLine`). Resolves with the
+ * downloaded file path on a zero exit; rejects with the stderr text on a non-zero
+ * exit, or with a watchdog error if yt-dlp stalls. Progress and the
+ * `after_move:filepath` line are read from stdout.
  */
 export async function runVideoDownload(
   binaryPath: string,
   options: VideoDownloadArgs,
   onProgress: (percent: number) => void,
+  onEvent?: (event: YtdlpEvent) => void,
 ): Promise<VideoDownloadResult> {
   let filePath = "";
+  let skippedLive = false;
+  const destinations: string[] = [];
   // Line-buffered (via onStdoutLine) so a tagged filepath split across two
   // stream chunks is still matched whole.
   const handleLine = (line: string) => {
-    const progress = /\[download\]\s+(\d+(?:\.\d+)?)%/.exec(line);
-    if (progress) {
-      onProgress(Number(progress[1]));
+    if (/does not pass filter \(!is_live\)/.test(line)) skippedLive = true;
+    const destination = DESTINATION_RE.exec(line.trim());
+    if (destination) destinations.push(destination[1].trim());
+    const event = parseYtdlpLine(line);
+    if (event) {
+      if (event.type === "progress" && event.progress.percent !== undefined) onProgress(event.progress.percent);
+      onEvent?.(event);
       return;
     }
     const tagged = FILEPATH_LINE_RE.exec(line.trim());
@@ -153,12 +243,21 @@ export async function runVideoDownload(
       filePath = tagged[1].trim();
     }
   };
-  const { code, stderr } = await runWithWatchdog(binaryPath, buildVideoDownloadArgs(options), {
-    idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
-    env: { ...process.env, PYTHONUNBUFFERED: "1" },
-    onStdoutLine: handleLine,
-    abortSignal: options.abortSignal,
-  });
+  let result: RunResult;
+  try {
+    result = await runWithWatchdog(binaryPath, buildVideoDownloadArgs(options), {
+      idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
+      env: { ...process.env, PYTHONUNBUFFERED: "1" },
+      onStdoutLine: handleLine,
+      abortSignal: options.abortSignal,
+    });
+  } catch (error) {
+    // The whole process tree has exited by now, so nothing holds the files open.
+    if (error instanceof AbortError) removePartialDownloads(destinations);
+    throw error;
+  }
+  const { code, stderr } = result;
+  if (code === 0 && skippedLive && !filePath) throw new LiveStreamError();
   if (code === 0) return { filePath };
   throw new Error(stderr.trim() || `yt-dlp exited with code ${code}`);
 }
@@ -166,6 +265,8 @@ export async function runVideoDownload(
 export type ThumbnailDownloadArgs = {
   url: string;
   outputTemplate: string;
+  /** yt-dlp's JS runtime, when installed: YouTube's extractor wants one. */
+  denoPath?: string;
   /** Idle-watchdog window in ms. Defaults to DEFAULT_IDLE_MS if omitted. */
   idleMs?: number;
   /** Aborting cancels the download mid-flight. */
@@ -174,7 +275,15 @@ export type ThumbnailDownloadArgs = {
 
 /** Build yt-dlp CLI args to fetch only a URL's thumbnail image; the video itself is skipped. */
 export function buildThumbnailArgs(a: ThumbnailDownloadArgs): string[] {
-  return ["--write-thumbnail", "--skip-download", "--no-playlist", "-o", a.outputTemplate, a.url];
+  return [
+    "--write-thumbnail",
+    "--skip-download",
+    "--no-playlist",
+    ...(a.denoPath ? ["--js-runtimes", `deno:${a.denoPath}`] : []),
+    "-o",
+    a.outputTemplate,
+    a.url,
+  ];
 }
 
 export type ThumbnailResult = { filePath: string };

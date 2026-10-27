@@ -1,13 +1,22 @@
 import { describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
 import { spawn } from "node:child_process";
-import { buildMonolithArgs, webpageFilename, runMonolithSave } from "../src/lib/monolith";
+import {
+  buildMonolithArgs,
+  reserveWebpagePath,
+  webpageFilename,
+  runMonolithSave,
+  webpageOutputPath,
+} from "../src/lib/monolith";
 
 function fakeChild() {
-  const child = new EventEmitter() as any;
+  const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => void };
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
   child.kill = vi.fn(() => child.emit("close", null));
@@ -22,12 +31,19 @@ describe("buildMonolithArgs", () => {
         outputPath: "/Downloads/example.com-x.html",
         noJavaScript: false,
       }),
-    ).toEqual(["--output", "/Downloads/example.com-x.html", "https://example.com/x"]);
+    ).toEqual(["--output", "example.com-x.html", "https://example.com/x"]);
   });
 
   it("adds --no-js for Lightweight mode", () => {
     expect(buildMonolithArgs({ url: "https://example.com/x", outputPath: "/d/page.html", noJavaScript: true })).toEqual(
-      ["--output", "/d/page.html", "--no-js", "https://example.com/x"],
+      ["--output", "page.html", "--no-js", "https://example.com/x"],
+    );
+  });
+
+  it("names the output by its file name alone — monolith on Windows can't open an absolute C:\\ path", () => {
+    const outputPath = path.join(os.tmpdir(), "Downloads", "example.com-x.html");
+    expect(buildMonolithArgs({ url: "https://example.com/x", outputPath, noJavaScript: false })[1]).toBe(
+      "example.com-x.html",
     );
   });
 });
@@ -120,6 +136,20 @@ describe("runMonolithSave", () => {
     );
   });
 
+  it("runs monolith inside the output's folder, so the bare file name lands there", () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+    const outputPath = path.join(os.tmpdir(), "Downloads", "page.html");
+
+    runMonolithSave("/monolith", { url: "https://example.com/x", outputPath, noJavaScript: false });
+
+    expect(spawn).toHaveBeenCalledWith(
+      "/monolith",
+      ["--output", "page.html", "https://example.com/x"],
+      expect.objectContaining({ cwd: path.dirname(outputPath) }),
+    );
+  });
+
   it("kills monolith and rejects when no output arrives within options.idleMs (CDN stall)", async () => {
     vi.useFakeTimers();
     try {
@@ -140,6 +170,76 @@ describe("runMonolithSave", () => {
       expect(child.kill).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe("webpageOutputPath", () => {
+  it("names the file after the page, numbered instead of overwriting an earlier save", () => {
+    const out = path.join("/", "out");
+    const taken = new Set([path.join(out, "example.com-news.html")]);
+    expect(webpageOutputPath(out, "https://example.com/news", () => false)).toBe(
+      path.join(out, "example.com-news.html"),
+    );
+    expect(webpageOutputPath(out, "https://example.com/news", (p) => taken.has(p))).toBe(
+      path.join(out, "example.com-news (2).html"),
+    );
+  });
+});
+
+/** Creating a symlink on Windows needs Developer Mode or an elevated shell. */
+function canSymlink(): boolean {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "monolith-"));
+  try {
+    fs.symlinkSync(path.join(dir, "target"), path.join(dir, "link"));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe("reserveWebpagePath", () => {
+  it("takes the name at once, so two saves of one page started together get different files", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "monolith-"));
+    try {
+      const first = reserveWebpagePath(dir, "https://example.com/a");
+      const second = reserveWebpagePath(dir, "https://example.com/a");
+      expect(path.basename(first)).toBe("example.com-a.html");
+      expect(path.basename(second)).toBe("example.com-a (2).html");
+      expect(fs.existsSync(first) && fs.existsSync(second)).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!canSymlink())("steps past a broken symlink with the name instead of retrying it forever", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "monolith-"));
+    try {
+      fs.symlinkSync(path.join(dir, "gone.html"), path.join(dir, "example.com-a.html"));
+      expect(path.basename(reserveWebpagePath(dir, "https://example.com/a"))).toBe("example.com-a (2).html");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("removes the reserved empty file when the save fails", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "monolith-"));
+    try {
+      const outputPath = reserveWebpagePath(dir, "https://example.com/bad");
+      const child = fakeChild();
+      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+      const promise = runMonolithSave("/opt/homebrew/bin/monolith", {
+        url: "https://example.com/bad",
+        outputPath,
+        noJavaScript: false,
+      });
+      child.emit("close", 1);
+      await expect(promise).rejects.toThrow();
+      expect(fs.existsSync(outputPath)).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 });

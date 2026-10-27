@@ -1,4 +1,7 @@
+import * as fs from "node:fs";
+import path from "node:path";
 import { DEFAULT_IDLE_MS, runWithWatchdog } from "./run.js";
+import { uniqueFilePath } from "./unique-path.js";
 
 export type MonolithSaveOptions = {
   url: string;
@@ -12,9 +15,14 @@ export type MonolithSaveOptions = {
   abortSignal?: AbortSignal;
 };
 
-/** Build monolith CLI args. monolith writes the self-contained HTML to `outputPath`. */
+/**
+ * Build monolith CLI args. monolith writes the self-contained HTML to `outputPath`,
+ * named by its file name alone: monolith 2.10 on Windows can't open an absolute
+ * `--output` path (`C:\…` panics with "could not prepare output … cannot find the
+ * path specified"), so `runMonolithSave` runs it inside the output's folder.
+ */
 export function buildMonolithArgs(o: MonolithSaveOptions): string[] {
-  const args = ["--output", o.outputPath];
+  const args = ["--output", path.basename(o.outputPath)];
   if (o.noJavaScript) args.push("--no-js");
   args.push(o.url);
   return args;
@@ -44,20 +52,66 @@ export function webpageFilename(url: string): string {
   return `${safe || "webpage"}.html`;
 }
 
+/**
+ * Where to save `url` in `folder`: its `webpageFilename`, numbered (`… (2).html`)
+ * when that name is taken, so saving a page again never overwrites the earlier copy.
+ */
+export function webpageOutputPath(folder: string, url: string, exists: (p: string) => boolean = fs.existsSync): string {
+  return uniqueFilePath(folder, webpageFilename(url).replace(/\.html$/, ""), "html", exists);
+}
+
+/**
+ * `webpageOutputPath`, with the name taken on disk at once — an empty file that
+ * monolith then writes over — so two saves of the same page started together
+ * (the Download form and Fast Download) can't pick the same name.
+ */
+export function reserveWebpagePath(folder: string, url: string): string {
+  // lstat, not existsSync: a broken symlink with the name exists for the
+  // exclusive create below, so existsSync would offer that name forever.
+  const taken = (p: string) => fs.lstatSync(p, { throwIfNoEntry: false }) !== undefined;
+  for (;;) {
+    const candidate = webpageOutputPath(folder, url, taken);
+    try {
+      fs.writeFileSync(candidate, "", { flag: "wx" });
+      return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+  }
+}
+
+/** Remove the file `reserveWebpagePath` made when nothing was saved into it. */
+function releaseEmpty(filePath: string) {
+  try {
+    if (fs.statSync(filePath).size === 0) fs.unlinkSync(filePath);
+  } catch {
+    // already gone
+  }
+}
+
 export type MonolithResult = { filePath: string };
 
 /**
  * Run monolith. Resolves with the saved file path on a zero exit; rejects with
  * the stderr text on a non-zero exit or with a watchdog kill if monolith stalls.
- * monolith writes the file itself via `--output`, so the runner does not touch
- * the filesystem. There is no progress callback — monolith emits no parseable
+ * monolith writes the file itself via `--output`; when the save fails, an
+ * empty file left at that path (the name reserved by `reserveWebpagePath`) is
+ * removed. There is no progress callback — monolith emits no parseable
  * progress stream.
  */
 export async function runMonolithSave(binaryPath: string, options: MonolithSaveOptions): Promise<MonolithResult> {
-  const { code, stderr } = await runWithWatchdog(binaryPath, buildMonolithArgs(options), {
-    idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
-    abortSignal: options.abortSignal,
-  });
-  if (code === 0) return { filePath: options.outputPath };
-  throw new Error(stderr.trim() || `monolith exited with code ${code}`);
+  let result: { code: number | null; stderr: string };
+  try {
+    result = await runWithWatchdog(binaryPath, buildMonolithArgs(options), {
+      cwd: path.dirname(options.outputPath),
+      idleMs: options.idleMs ?? DEFAULT_IDLE_MS,
+      abortSignal: options.abortSignal,
+    });
+  } catch (error) {
+    releaseEmpty(options.outputPath);
+    throw error;
+  }
+  if (result.code === 0) return { filePath: options.outputPath };
+  releaseEmpty(options.outputPath);
+  throw new Error(result.stderr.trim() || `monolith exited with code ${result.code}`);
 }

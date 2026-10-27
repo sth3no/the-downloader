@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
@@ -8,9 +11,12 @@ import {
   buildThumbnailArgs,
   buildVideoDownloadArgs,
   extractDumpJson,
+  LiveStreamError,
   isLiveStream,
   runVideoDownload,
 } from "../src/lib/ytdlp";
+import { PROGRESS_TEMPLATE } from "../src/lib/progress";
+import { AbortError } from "../src/lib/run";
 
 function fakeChild() {
   const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => void };
@@ -33,6 +39,8 @@ describe("buildVideoDownloadArgs", () => {
       "--ffmpeg-location",
       "/ff",
       "--no-playlist",
+      "--match-filter",
+      "!is_live",
       "--format",
       "bestaudio/best",
       "--extract-audio",
@@ -40,8 +48,11 @@ describe("buildVideoDownloadArgs", () => {
       "mp3",
       "--audio-quality",
       "0",
+      "--no-quiet",
       "--progress",
       "--newline",
+      "--progress-template",
+      PROGRESS_TEMPLATE,
       "--print",
       "after_move:THE-DOWNLOADER-FILEPATH:%(filepath)s",
       "https://example.com/v",
@@ -69,16 +80,26 @@ describe("buildVideoDownloadArgs", () => {
       "--ffmpeg-location",
       "/ff",
       "--no-playlist",
+      "--match-filter",
+      "!is_live",
       "--format",
       "bestvideo+bestaudio/best",
       "--merge-output-format",
       "mp4",
+      "--no-quiet",
       "--progress",
       "--newline",
+      "--progress-template",
+      PROGRESS_TEMPLATE,
       "--print",
       "after_move:THE-DOWNLOADER-FILEPATH:%(filepath)s",
       "https://example.com/v",
     ]);
+  });
+
+  it("lets a WebM download fall back to mkv when the streams can't go into WebM", () => {
+    const args = buildVideoDownloadArgs({ ...base, format: "bestvideo+bestaudio/best#webm" });
+    expect(args[args.indexOf("--merge-output-format") + 1]).toBe("webm/mkv");
   });
 
   it("passes --no-playlist so a watch?v=…&list=… URL downloads only the inspected video", () => {
@@ -86,6 +107,19 @@ describe("buildVideoDownloadArgs", () => {
     // showed one video's title and then downloaded the entire playlist.
     expect(buildVideoDownloadArgs({ ...base, format: "bestaudio#mp3" })).toContain("--no-playlist");
     expect(buildVideoDownloadArgs({ ...base, format: "best#mp4" })).toContain("--no-playlist");
+  });
+
+  it("skips a stream that is live right now, in every download path", () => {
+    // Without it a live link records until someone stops it: progress keeps
+    // arriving, so the idle watchdog never fires.
+    const args = buildVideoDownloadArgs({ ...base, format: "best#mp4" });
+    expect(args[args.indexOf("--match-filter") + 1]).toBe("!is_live");
+  });
+
+  it("uses only yt-dlp's site extractors when asked, never the generic page reader", () => {
+    const args = buildVideoDownloadArgs({ ...base, format: "best#mp4", knownSitesOnly: true });
+    expect(args[args.indexOf("--use-extractors") + 1]).toBe("default,-generic");
+    expect(buildVideoDownloadArgs({ ...base, format: "best#mp4" })).not.toContain("--use-extractors");
   });
 
   it("adds the deno JS runtime when denoPath is given", () => {
@@ -115,6 +149,31 @@ describe("runVideoDownload", () => {
 
     await expect(promise).resolves.toEqual({ filePath: "/out/My Video.mp4" });
     expect(onProgress).toHaveBeenCalledWith(42);
+  });
+
+  it("rejects when yt-dlp skipped the link as a live stream", async () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const promise = runVideoDownload("/yt-dlp", options, vi.fn());
+
+    child.stdout.emit("data", Buffer.from("[download] Launch Live does not pass filter (!is_live), skipping ..\n"));
+    child.emit("close", 0);
+
+    await expect(promise).rejects.toThrow(LiveStreamError);
+  });
+
+  it("keeps a playlist's downloads when one entry was skipped as live", async () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const promise = runVideoDownload("/yt-dlp", options, vi.fn());
+
+    child.stdout.emit("data", Buffer.from("THE-DOWNLOADER-FILEPATH:/out/Earlier Episode.mp4\n"));
+    child.stdout.emit("data", Buffer.from("[download] Launch Live does not pass filter (!is_live), skipping ..\n"));
+    child.emit("close", 0);
+
+    await expect(promise).resolves.toEqual({ filePath: "/out/Earlier Episode.mp4" });
   });
 
   it("ignores untagged path-like lines (e.g. post-processor [ExtractAudio] Destination) — they no longer overwrite the real after_move filepath", async () => {
@@ -153,6 +212,34 @@ describe("runVideoDownload", () => {
     expect(onProgress).toHaveBeenCalledWith(10);
     expect(onProgress).toHaveBeenCalledWith(55);
     expect(onProgress).toHaveBeenCalledWith(100);
+  });
+
+  it("parses the structured progress template into bytes, speed and ETA", async () => {
+    const child = fakeChild();
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+
+    const onProgress = vi.fn();
+    const onEvent = vi.fn();
+    const promise = runVideoDownload("/yt-dlp", options, onProgress, onEvent);
+
+    child.stdout.emit("data", Buffer.from("[info] abc: Downloading 1 format(s): 137+140\n"));
+    child.stdout.emit("data", Buffer.from("[download] Destination: /out/My Video.f137.mp4\n"));
+    child.stdout.emit("data", Buffer.from("THE-DOWNLOADER-PROGRESS:2500000:10000000:NA:1250000.5:6\n"));
+    child.stdout.emit("data", Buffer.from('[Merger] Merging formats into "/out/My Video.mp4"\n'));
+    child.stdout.emit("data", Buffer.from("THE-DOWNLOADER-FILEPATH:/out/My Video.mp4\n"));
+    child.emit("close", 0);
+
+    await expect(promise).resolves.toEqual({ filePath: "/out/My Video.mp4" });
+    expect(onProgress).toHaveBeenCalledWith(25);
+    expect(onEvent.mock.calls.map(([e]) => e)).toEqual([
+      { type: "formats", streams: 2 },
+      { type: "stream-start" },
+      {
+        type: "progress",
+        progress: { percent: 25, downloadedBytes: 2500000, totalBytes: 10000000, speed: 1250000.5, eta: 6 },
+      },
+      { type: "postprocess", step: "merge" },
+    ]);
   });
 
   it("rejects with the stderr text on a non-zero exit", async () => {
@@ -251,6 +338,11 @@ describe("isLiveStream", () => {
     expect(isLiveStream(video("not_live"))).toBe(false);
   });
 
+  it("treats a recording of a past live stream as an ordinary video, and one still processing as live", () => {
+    expect(isLiveStream(video("was_live"))).toBe(false);
+    expect(isLiveStream(video("post_live"))).toBe(true);
+  });
+
   it("treats an absent status as not live", () => {
     expect(isLiveStream(video(undefined))).toBe(false);
   });
@@ -270,5 +362,70 @@ describe("buildThumbnailArgs", () => {
       "/out/%(title)s.%(ext)s",
       "https://example.com/v",
     ]);
+  });
+
+  it("passes the deno JS runtime when it's installed", () => {
+    const args = buildThumbnailArgs({ url: "https://youtu.be/a", outputTemplate: "/o.%(ext)s", denoPath: "/deno" });
+    expect(args[args.indexOf("--js-runtimes") + 1]).toBe("deno:/deno");
+  });
+});
+
+describe("Stop cleans up partial downloads", () => {
+  function tempDir(): string {
+    return fs.mkdtempSync(path.join(os.tmpdir(), "ytdlp-"));
+  }
+
+  it("removes the .part, .ytdl and fragment files of the stream being written when the download is stopped", async () => {
+    const dir = tempDir();
+    try {
+      const destination = path.join(dir, "Talk (abc).f401.mp4");
+      const finished = path.join(dir, "Earlier (xyz).mp4");
+      for (const file of [`${destination}.part`, `${destination}.ytdl`, `${destination}.part-Frag3`, finished]) {
+        fs.writeFileSync(file, "x");
+      }
+      const child = fakeChild();
+      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+      const controller = new AbortController();
+      const promise = runVideoDownload(
+        "/yt-dlp",
+        {
+          url: "https://youtu.be/abc",
+          format: "bv*+ba#mp4",
+          outputTemplate: "/o",
+          ffmpegPath: "/ff",
+          abortSignal: controller.signal,
+        },
+        () => undefined,
+      );
+      child.stdout.emit("data", Buffer.from(`[download] Destination: ${destination}\n`));
+      controller.abort();
+
+      await expect(promise).rejects.toBeInstanceOf(AbortError);
+      expect(fs.readdirSync(dir)).toEqual(["Earlier (xyz).mp4"]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves partial files alone when yt-dlp fails on its own (it can resume them)", async () => {
+    const dir = tempDir();
+    try {
+      const destination = path.join(dir, "Talk (abc).mp4");
+      fs.writeFileSync(`${destination}.part`, "x");
+      const child = fakeChild();
+      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce(child);
+      const promise = runVideoDownload(
+        "/yt-dlp",
+        { url: "https://youtu.be/abc", format: "bv*+ba#mp4", outputTemplate: "/o", ffmpegPath: "/ff" },
+        () => undefined,
+      );
+      child.stdout.emit("data", Buffer.from(`[download] Destination: ${destination}\n`));
+      child.emit("close", 1);
+
+      await expect(promise).rejects.toThrow();
+      expect(fs.existsSync(`${destination}.part`)).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
