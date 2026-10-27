@@ -41,6 +41,14 @@ if (!existsSync(path.join(storeRepo, "extensions"))) {
   process.exit(1);
 }
 
+// The Store copy is what is committed here, so uncommitted edits (or deletions)
+// can't slip into it unreviewed.
+const changes = execFileSync("git", ["status", "--porcelain"], { cwd: repo, encoding: "utf8" }).trim();
+if (changes) {
+  console.error(`Commit or stash these changes first:\n${changes}`);
+  process.exit(1);
+}
+
 const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: repo, encoding: "utf8" })
   .split("\0")
   .filter((file) => file && !DEV_ONLY_PATHS.has(file.split("/")[0]));
