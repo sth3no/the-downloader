@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
+import { join } from "node:path";
 import { getPreferenceValues, environment } from "@raycast/api";
-import { formatDuration, intervalToDuration } from "date-fns";
 import { Format, Video } from "./types.js";
 import { execSync } from "child_process";
 import { findHomebrewPath, resolveBinary, isWindows, isMac } from "./lib/binary.js";
@@ -20,7 +20,6 @@ const prefs = getPreferenceValues<ExtensionPreferences>();
 export const {
   homebrewPath: homebrewPathPreference,
   autoLoadUrlFromClipboard,
-  autoLoadUrlFromSelectedText,
   enableBrowserExtensionSupport,
   forceIpv4,
   networkIdleTimeoutSec,
@@ -40,10 +39,11 @@ export const {
  * never expanded downstream — yt-dlp/monolith would write into a literal `~`
  * folder relative to the cwd. Expanding here makes the out-of-box default work
  * on first run without the user touching the directory picker. `~user`-style
- * specs (no separator after the tilde) are left untouched.
+ * specs (no separator after the tilde) are left untouched. Joined rather than
+ * spliced, so Windows gets `C:\Users\me\Downloads`, not `C:\Users\me/Downloads`.
  */
 export function expandTilde(p: string): string {
-  return p.replace(/^~(?=$|[/\\])/, os.homedir());
+  return /^~(?=$|[/\\])/.test(p) ? join(os.homedir(), p.slice(1)) : p;
 }
 
 /** The configured download folder, with a leading `~` expanded to the home directory. */
@@ -98,19 +98,6 @@ export const getGalleryDlPath = () => resolveBinary("gallery-dl", galleryDlPathP
 export const getDenoPath = () => resolveBinary("deno", denoPathPreference);
 export const getSpotdlPath = () => resolveBinary("spotdl", spotDlPathPreference, environment.supportPath);
 export const getMonolithPath = () => resolveBinary("monolith", monolithPathPreference);
-
-export function formatHHMM(seconds: number) {
-  const duration = intervalToDuration({ start: 0, end: seconds * 1000 });
-
-  return formatDuration(duration, {
-    format: duration.hours && duration.hours > 0 ? ["hours", "minutes", "seconds"] : ["minutes", "seconds"],
-    zero: true,
-    delimiter: ":",
-    locale: {
-      formatDistance: (_token, count) => String(count).padStart(2, "0"),
-    },
-  });
-}
 
 export function formatTbr(tbr: number | null) {
   if (!tbr) return "";

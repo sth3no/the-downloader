@@ -7,6 +7,7 @@ import {
   Clipboard,
   Form,
   Icon,
+  Keyboard,
   Toast,
   environment,
   getPreferenceValues,
@@ -15,6 +16,7 @@ import {
   showHUD,
   showInFinder,
   showToast,
+  useNavigation,
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
 import { detectSource } from "../lib/detect.js";
@@ -23,22 +25,30 @@ import {
   clampFiletype,
   defaultFiletype,
   filetypeGuidance,
+  installedAlternatives,
   requiredTools,
   resolveTool,
   supportedFiletypes,
 } from "../lib/filetype.js";
 import { composeVideoFormat } from "../lib/video-format.js";
-import { fetchVideoInfo, isLiveStream, runThumbnailDownload, runVideoDownload } from "../lib/ytdlp.js";
+import { LiveStreamError, fetchVideoInfo, isLiveStream, runThumbnailDownload, runVideoDownload } from "../lib/ytdlp.js";
+import { ensureFreshTools, hintOutdatedTool } from "../lib/tool-updates.js";
+import { uniqueFilePath } from "../lib/unique-path.js";
 import { isLoginRequiredError, runGalleryDownload } from "../lib/gallerydl.js";
 import { resolveBrowser } from "../lib/browsers.js";
 import { AbortError } from "../lib/run.js";
-import { isAppleSilicon, isRosettaInstalled, RosettaRequiredError } from "../lib/managed-binary.js";
+import { needsRosetta, RosettaRequiredError } from "../lib/managed-binary.js";
 import { runSpotdlDownload, SpotdlDownloadError } from "../lib/spotdl.js";
-import { runMonolithSave, webpageFilename } from "../lib/monolith.js";
+import { ABOUT_URL, SPOTDL_SETUP_GUIDE_URL, SUPPORTED_SITES_URL } from "../lib/docs.js";
+import { reserveWebpagePath, runMonolithSave } from "../lib/monolith.js";
+import { DownloadInit, DownloadSession } from "../lib/download-session.js";
+import { entryFromSnapshot, recordDownload } from "../lib/history.js";
+import { QUALITY_VALUES, QualityValue, estimateQuality, maxHeight, qualityTitle } from "../lib/estimate.js";
+import { formatCount, qualityName } from "../lib/media-info.js";
+import { formatClock, progressMessage } from "../lib/format.js";
 import extractTranscript from "../transcript.js";
 import {
   downloadPath,
-  formatHHMM,
   getDenoPath,
   getFormatTitle,
   getFormatValue,
@@ -54,10 +64,15 @@ import {
   normalizeUrl,
   sanitizeVideoTitle,
 } from "../utils.js";
+import { DownloadView } from "./download-view.js";
+import { DownloadHistory, HISTORY_SHORTCUT } from "./history-view.js";
+import { ChatAboutLinkAction } from "./chat-action.js";
+import { MediaPreview } from "./media-preview.js";
 import Installer from "./installer.js";
 import Updater from "./updater.js";
 
-const prefs = getPreferenceValues<ExtensionPreferences>();
+// Rendered only by the Download command, so it also sees that command's own settings (Exact Format Selection).
+const prefs = getPreferenceValues<Preferences.Index>();
 
 /** Required-tool name → its filesystem-path resolver. */
 const TOOL_PATH: Record<string, () => string> = {
@@ -86,26 +101,68 @@ const FILETYPE_ICON: Record<Filetype, Icon> = {
   website: Icon.Globe,
 };
 
-const SPOTDL_SETUP_GUIDE_URL = "https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md";
+const QUALITY_TITLE: Record<string, string> = {
+  best: "Best",
+  "1080": "1080p",
+  "720": "720p",
+  "480": "480p",
+  smallest: "Smallest",
+};
 
-/** Turn a rejected runner into a red, copyable failure toast — or a neutral "Cancelled" toast when the user pressed Stop. */
-function failToast(toast: Toast, error: unknown) {
+const FORMAT_TITLE: Record<string, string> = {
+  mp4: "MP4",
+  mkv: "MKV",
+  webm: "WebM",
+  mp3: "MP3",
+  m4a: "M4A",
+  opus: "Opus",
+  flac: "FLAC",
+};
+
+const formatTitle = (value: string) => FORMAT_TITLE[value] ?? value.toUpperCase();
+
+/** Mirror a finished toast onto the download view and record it in the history. */
+function succeedSession(session: DownloadSession, toast: Toast, filePath?: string) {
+  session.succeed({ filePath: filePath || undefined, title: toast.title, message: toast.message });
+  void recordDownload(entryFromSnapshot(session.getSnapshot()));
+}
+
+/** Mirror a failure toast (after `failToast` or a custom one) onto the download view and record it. */
+function failSession(session: DownloadSession, toast: Toast, error?: unknown) {
+  session.fail({ title: toast.title, message: toast.message, cancelled: error instanceof AbortError });
+  void recordDownload(entryFromSnapshot(session.getSnapshot()));
+}
+
+/**
+ * Turn a rejected runner into a red, copyable failure toast — or a neutral
+ * "Cancelled" toast when the user pressed Stop. Returns true for a plain tool
+ * failure (not a cancel or a specially handled error), where an outdated-tool
+ * hint makes sense.
+ */
+function failToast(toast: Toast, error: unknown): boolean {
   // Clear the in-flight "Stop" action up front — every failure path below
-  // either sets its own secondary action or wants none, and a dead Stop
-  // button left over from startAbortable would do nothing.
+  // either sets its own actions or wants none, and a dead Stop button left
+  // over from startAbortable would do nothing.
+  toast.primaryAction = undefined;
   toast.secondaryAction = undefined;
   if (error instanceof AbortError) {
     toast.style = Toast.Style.Failure;
     toast.title = "Cancelled";
     toast.message = undefined;
-    toast.primaryAction = undefined;
-    return;
+    return false;
+  }
+  if (error instanceof LiveStreamError) {
+    // Not a tool problem, so no "update yt-dlp" hint.
+    toast.style = Toast.Style.Failure;
+    toast.title = error.message;
+    toast.message = "Try again once the stream has ended.";
+    return false;
   }
   if (error instanceof RosettaRequiredError) {
     toast.style = Toast.Style.Failure;
     toast.title = "spotDL needs Rosetta 2";
     toast.message = error.message;
-    return;
+    return false;
   }
   if (error instanceof SpotdlDownloadError) {
     const partial =
@@ -119,25 +176,29 @@ function failToast(toast: Toast, error: unknown) {
     } else if (error.summary.action === "open-setup-guide") {
       toast.secondaryAction = { title: "Open Setup Guide", onAction: () => open(SPOTDL_SETUP_GUIDE_URL) };
     }
-    return;
+    return false;
   }
   const message = error instanceof Error ? error.message : "Unknown error";
   toast.style = Toast.Style.Failure;
   toast.title = "Download Failed";
   toast.message = message;
   toast.primaryAction = { title: "Copy Error", onAction: () => Clipboard.copy(message) };
+  return true;
 }
 
 type DownloadFormProps = { initialUrl: string };
 
 export function DownloadForm({ initialUrl }: DownloadFormProps) {
   const audioPreferred = prefs.videoMediaType === "audio";
+  const { push } = useNavigation();
 
   const [url, setUrl] = useState(initialUrl);
-  const [filetype, setFiletype] = useState<Filetype>(() =>
+  const [pickedFiletype, setFiletype] = useState<Filetype>(() =>
     isValidUrl(initialUrl) ? defaultFiletype(detectSource(initialUrl), audioPreferred) : "video",
   );
   const [filetypeTouched, setFiletypeTouched] = useState(false);
+  // Controlled so the Quality size estimates follow the chosen container.
+  const [container, setContainer] = useState<string>(prefs.videoContainer);
   const [refresh, setRefresh] = useState(0);
   // Ref (not state) so a rapid second submit sees the flag synchronously — a
   // re-render would race with the click. Refs update inside the same event
@@ -161,14 +222,15 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
 
   /**
    * Wire an AbortController to a toast: returns the signal for the runner
-   * options and a `done()` to call on completion. The toast gains a "Stop"
-   * secondary action that aborts the in-flight child, and the controller is
-   * tracked so unmount cleanup can kill anything still running.
+   * options and a `done()` to call on completion. The toast's first action
+   * becomes "Stop Download", which aborts the in-flight child, and the
+   * controller is tracked so unmount cleanup can kill anything still running.
    */
-  function startAbortable(toast: Toast): { signal: AbortSignal; done: () => void } {
+  function startAbortable(toast: Toast, session?: DownloadSession): { signal: AbortSignal; done: () => void } {
     const controller = new AbortController();
     activeAbort.current = controller;
-    toast.secondaryAction = { title: "Stop", onAction: () => controller.abort() };
+    toast.primaryAction = { title: "Stop Download", onAction: () => controller.abort() };
+    session?.onStop(() => controller.abort());
     return {
       signal: controller.signal,
       done: () => {
@@ -179,29 +241,33 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
 
   const validUrl = isValidUrl(url);
   const source = useMemo(() => detectSource(url), [url]);
+  // Keep Filetype valid for the URL: the source default until the user picks
+  // one, and even then a type the source supports (e.g. Video was picked, then
+  // a Pinterest link is pasted, which only supports Image). Derived on every
+  // render — an effect lagged one render behind a new link, so the dropdown
+  // briefly held a type the link doesn't offer.
+  const filetype = !validUrl
+    ? pickedFiletype
+    : filetypeTouched
+      ? clampFiletype(source, pickedFiletype, audioPreferred)
+      : defaultFiletype(source, audioPreferred);
   const ytdlpBound = resolveTool(source, filetype) === "yt-dlp";
-
-  // Keep Filetype valid for the URL: snap to the source default until the user
-  // overrides it, and — even after they override — clamp to a supported type
-  // when the detected source can't do the current pick (e.g. Video was selected,
-  // then a Pinterest link is pasted, which only supports Image).
-  useEffect(() => {
-    if (!validUrl) return;
-    const src = detectSource(url);
-    setFiletype((current) =>
-      filetypeTouched ? clampFiletype(src, current, audioPreferred) : defaultFiletype(src, audioPreferred),
-    );
-  }, [url, filetypeTouched, validUrl, audioPreferred]);
 
   // The required tools must all exist; otherwise the form is replaced by the Installer.
   const missingTool = useMemo(
-    () => (validUrl ? requiredTools(source, filetype).find((name) => !fs.existsSync(TOOL_PATH[name]())) : undefined),
-    [source, filetype, validUrl, refresh],
+    () =>
+      validUrl ? requiredTools(source, filetype, url).find((name) => !fs.existsSync(TOOL_PATH[name]())) : undefined,
+    [source, filetype, url, validUrl, refresh],
   );
 
   // yt-dlp metadata — fetched only for a yt-dlp-bound selection with its tools present.
   const shouldFetchMeta = ytdlpBound && validUrl && !missingTool;
-  const { data: video, isLoading: metaLoading } = usePromise(
+
+  const {
+    data: video,
+    isLoading: metaLoading,
+    revalidate: refetchMeta,
+  } = usePromise(
     async (u: string, fetchIt: boolean) => {
       if (!fetchIt) return undefined;
       const denoPath = getDenoPath();
@@ -220,20 +286,94 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
     [url, shouldFetchMeta],
     { onError: () => undefined, abortable: metaAbortable },
   );
+  // Outdated tools are the usual cause of failed downloads (yt-dlp's HTTP 403s,
+  // gallery-dl's broken extractors), so the first time the form needs a set of
+  // tools, check them, offer to update, and re-fetch the metadata once an update
+  // lands. The metadata fetch itself doesn't wait for the answer.
+  const checkedTools = useRef(new Set<string>());
+  useEffect(() => {
+    if (!validUrl || missingTool) return;
+    const tools = requiredTools(source, filetype, url);
+    const key = tools.join(",");
+    if (checkedTools.current.has(key)) return;
+    checkedTools.current.add(key);
+    void ensureFreshTools(tools).then((outcome) => {
+      if (outcome === "updated") refetchMeta();
+    });
+  }, [validUrl, missingTool, source, filetype, url, refetchMeta]);
 
-  const liveStream = !!video && isLiveStream(video);
+  // Only the current URL's metadata counts: while a new one loads, `video` is the
+  // previous link's. A live link submitted before its probe ends is still refused
+  // by yt-dlp itself (see `buildVideoDownloadArgs`).
+  const liveStream = !metaLoading && !!video && isLiveStream(video);
 
-  if (missingTool) {
-    return <Installer executable={missingTool} onRefresh={() => setRefresh((r) => r + 1)} />;
+  /** Start a download view for this submit. yt-dlp metadata, when fetched, fills in the title and details. */
+  function openSession(init: Omit<DownloadInit, "title" | "meta">, withMeta: boolean): DownloadSession {
+    // While a new URL's metadata is still loading, `video` belongs to the previous URL.
+    const meta = withMeta && !metaLoading ? video : undefined;
+    const session = new DownloadSession({
+      ...init,
+      title: meta?.title,
+      meta: meta
+        ? {
+            uploader: meta.uploader ?? meta.channel ?? undefined,
+            duration: meta.duration || undefined,
+            thumbnail: meta.thumbnail ?? undefined,
+            source: meta.extractor_key ?? undefined,
+          }
+        : undefined,
+    });
+    push(<DownloadView session={session} />);
+    return session;
   }
 
-  // The adaptive status line.
+  if (missingTool) {
+    // Other types that work with what's installed, so a missing tool doesn't trap
+    // the user — e.g. an unknown site defaults to Website, but Video may work.
+    const alternatives = installedAlternatives(source, filetype, url, (tool) => fs.existsSync(TOOL_PATH[tool]()));
+    return (
+      <Installer
+        executable={missingTool}
+        onRefresh={() => setRefresh((r) => r + 1)}
+        alternatives={
+          alternatives.length > 0
+            ? alternatives.map((ft) => (
+                <Action
+                  key={ft}
+                  title={`Download as ${FILETYPE_TITLE[ft]} Instead`}
+                  icon={FILETYPE_ICON[ft]}
+                  onAction={() => {
+                    setFiletypeTouched(true);
+                    setFiletype(ft);
+                  }}
+                />
+              ))
+            : undefined
+        }
+      />
+    );
+  }
+
+  // The adaptive status line, plus a details line once yt-dlp metadata is in.
   let statusLabel = "Status";
   let statusText = "Paste a link to download.";
+  let detailsText = "";
+  const metaReady = ytdlpBound && !!video && !metaLoading;
   if (validUrl) {
-    if (ytdlpBound && video) {
+    // While a new URL's metadata loads, `video` still belongs to the previous URL.
+    if (metaReady && video) {
       statusLabel = "Title";
-      statusText = video.duration ? `${video.title} · ${formatHHMM(video.duration)}` : video.title;
+      statusText = video.title;
+      const best = qualityName(maxHeight(video));
+      const views = formatCount(video.view_count);
+      detailsText = [
+        video.uploader ?? video.channel,
+        video.duration ? formatClock(video.duration) : undefined,
+        views ? `${views} views` : undefined,
+        best ? `up to ${best}` : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · ");
     } else if (ytdlpBound && metaLoading) {
       statusText = "Fetching details…";
     } else if (ytdlpBound) {
@@ -243,6 +383,14 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       statusText = filetypeGuidance(source);
     }
   }
+
+  const estimates =
+    metaReady && video
+      ? (Object.fromEntries(QUALITY_VALUES.map((q) => [q, estimateQuality(video, q, container)])) as Record<
+          QualityValue,
+          ReturnType<typeof estimateQuality>
+        >)
+      : undefined;
 
   const urlError =
     url && !validUrl
@@ -293,11 +441,21 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
   ) {
     if (ft === "website") {
       const toast = await showToast({ style: Toast.Style.Animated, title: "Saving Webpage" });
-      const { signal, done } = startAbortable(toast);
+      const session = openSession(
+        {
+          kind: "website",
+          url: submitUrl,
+          folder,
+          format: values.saveMode === "lightweight" ? "Lightweight (no JavaScript)" : "Complete",
+        },
+        false,
+      );
+      const { signal, done } = startAbortable(toast, session);
+      session.working();
       try {
         const { filePath } = await runMonolithSave(getMonolithPath(), {
           url: submitUrl,
-          outputPath: path.join(folder, webpageFilename(submitUrl)),
+          outputPath: reserveWebpagePath(folder, submitUrl),
           noJavaScript: values.saveMode === "lightweight",
           idleMs: getIdleTimeoutMs(),
           abortSignal: signal,
@@ -307,8 +465,10 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         toast.message = path.basename(filePath);
         toast.primaryAction = { title: "Open Folder", onAction: () => showInFinder(filePath) };
         toast.secondaryAction = { title: "Open File", onAction: () => open(filePath) };
+        succeedSession(session, toast, filePath);
       } catch (error) {
-        failToast(toast, error);
+        if (failToast(toast, error)) await hintOutdatedTool(toast, "monolith");
+        failSession(session, toast, error);
       } finally {
         done();
       }
@@ -317,10 +477,12 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
 
     if (ft === "transcript") {
       const toast = await showToast({ style: Toast.Style.Animated, title: "Extracting Transcript" });
-      const { signal, done } = startAbortable(toast);
+      const session = openSession({ kind: "transcript", url: submitUrl, folder, format: "Plain text" }, true);
+      const { signal, done } = startAbortable(toast, session);
+      session.working();
       try {
         const { transcript, title } = await extractTranscript(submitUrl, "en", signal);
-        const filePath = path.join(folder, `${title}.txt`);
+        const filePath = uniqueFilePath(folder, title, "txt");
         // Defense in depth: sanitizeVideoTitle already strips separators, but
         // assert the resolved path stays inside the chosen folder before writing
         // so a pathological title can never escape it.
@@ -330,11 +492,13 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         fs.writeFileSync(filePath, transcript, "utf-8");
         toast.style = Toast.Style.Success;
         toast.title = "Transcript Saved";
-        toast.message = `${title}.txt`;
+        toast.message = path.basename(filePath);
         toast.primaryAction = { title: "Open", onAction: () => open(filePath) };
         toast.secondaryAction = { title: "Copy Transcript", onAction: () => Clipboard.copy(transcript) };
+        succeedSession(session, toast, filePath);
       } catch (error) {
-        failToast(toast, error);
+        if (failToast(toast, error)) await hintOutdatedTool(toast, "yt-dlp");
+        failSession(session, toast, error);
       } finally {
         done();
       }
@@ -353,7 +517,8 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         return;
       }
 
-      const { signal, done } = startAbortable(toast);
+      const session = openSession({ kind: "gallery", url: submitUrl, folder }, false);
+      const { signal, done } = startAbortable(toast, session);
       try {
         const { files } = await runGalleryDownload(
           getGalleryDlPath(),
@@ -366,6 +531,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
           },
           (p) => {
             toast.message = `${p.files} files`;
+            session.count(p.files);
           },
         );
         if (files === 0) {
@@ -376,12 +542,14 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
           toast.message = "gallery-dl found no new files — they may already exist, or the gallery needs a login.";
           toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
           toast.secondaryAction = undefined;
+          failSession(session, toast);
         } else {
           toast.style = Toast.Style.Success;
           toast.title = "Gallery Downloaded";
           toast.message = `${files} files`;
           toast.primaryAction = { title: "Open Folder", onAction: () => open(folder) };
           toast.secondaryAction = undefined;
+          succeedSession(session, toast);
         }
       } catch (error) {
         if (isLoginRequiredError(error)) {
@@ -393,8 +561,9 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
           toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
           toast.secondaryAction = undefined;
         } else {
-          failToast(toast, error);
+          if (failToast(toast, error)) await hintOutdatedTool(toast, "gallery-dl");
         }
+        failSession(session, toast, error);
       } finally {
         done();
       }
@@ -403,11 +572,15 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
 
     if (ft === "image") {
       const toast = await showToast({ style: Toast.Style.Animated, title: "Downloading Thumbnail" });
-      const { signal, done } = startAbortable(toast);
+      const session = openSession({ kind: "thumbnail", url: submitUrl, folder }, true);
+      const { signal, done } = startAbortable(toast, session);
+      session.working();
       try {
+        const denoPath = getDenoPath();
         const { filePath } = await runThumbnailDownload(getytdlPath(), {
           url: submitUrl,
           outputTemplate: path.join(folder, "%(title)s (%(id)s).%(ext)s"),
+          denoPath: fs.existsSync(denoPath) ? denoPath : undefined,
           idleMs: getIdleTimeoutMs(),
           abortSignal: signal,
         });
@@ -423,8 +596,10 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         } else {
           toast.secondaryAction = undefined;
         }
+        succeedSession(session, toast, filePath);
       } catch (error) {
-        failToast(toast, error);
+        if (failToast(toast, error)) await hintOutdatedTool(toast, "yt-dlp");
+        failSession(session, toast, error);
       } finally {
         done();
       }
@@ -452,17 +627,22 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
         toast.secondaryAction = {
           title: "Open Setup Guide",
-          onAction: () => open("https://github.com/sth3no/the-downloader/blob/main/SPOTIFY.md"),
+          onAction: () => open(SPOTDL_SETUP_GUIDE_URL),
         };
         return;
       }
 
-      const { signal, done } = startAbortable(toast);
+      const spotifyFormat = String(values.audioFmt ?? livePrefs.spotifyAudioFormat);
+      const session = openSession(
+        { kind: "spotify", url: submitUrl, folder, format: formatTitle(spotifyFormat) },
+        false,
+      );
+      const { signal, done } = startAbortable(toast, session);
       try {
-        // A managed spotDL binary that already exists (e.g. installed before the
-        // Rosetta guard, or copied from another machine) would otherwise fail
-        // with a cryptic "Bad CPU type". Surface the friendly hint instead.
-        if (isAppleSilicon() && !isRosettaInstalled()) throw new RosettaRequiredError();
+        // An Intel-only spotDL (the prebuilt download) on an Apple Silicon Mac
+        // without Rosetta would otherwise fail with a cryptic "Bad CPU type".
+        // Surface the friendly hint instead.
+        if (needsRosetta(getSpotdlPath())) throw new RosettaRequiredError();
         const { tracks } = await runSpotdlDownload(
           getSpotdlPath(),
           {
@@ -471,7 +651,7 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             // Honor the live audioFmt dropdown (the only place FLAC is offered);
             // fall back to the freshly-read preference. Previously this used the
             // stale module-level pref and silently ignored the dropdown.
-            format: String(values.audioFmt ?? livePrefs.spotifyAudioFormat),
+            format: spotifyFormat,
             ffmpegPath: getffmpegPath(),
             clientId,
             clientSecret,
@@ -482,15 +662,30 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
           },
           (p) => {
             toast.message = `${p.tracks} tracks`;
+            session.count(p.tracks);
           },
         );
+        if (tracks === 0) {
+          // A private or empty playlist can exit cleanly with nothing saved —
+          // say so instead of a green "0 tracks".
+          toast.style = Toast.Style.Failure;
+          toast.title = "Nothing downloaded";
+          toast.message =
+            "spotDL saved no tracks. The playlist may be private or empty; for private playlists, turn on Spotify: User Authentication.";
+          toast.primaryAction = { title: "Open Extension Preferences", onAction: () => openExtensionPreferences() };
+          toast.secondaryAction = undefined;
+          failSession(session, toast);
+          return;
+        }
         toast.style = Toast.Style.Success;
         toast.title = "Download Complete";
         toast.message = `${tracks} tracks`;
         toast.primaryAction = { title: "Open Folder", onAction: () => open(folder) };
         toast.secondaryAction = undefined;
+        succeedSession(session, toast);
       } catch (error) {
-        failToast(toast, error);
+        if (failToast(toast, error)) await hintOutdatedTool(toast, "spotdl");
+        failSession(session, toast, error);
       } finally {
         done();
       }
@@ -520,7 +715,18 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       title: ft === "audio" ? "Downloading Audio" : "Downloading Video",
       message: "0%",
     });
-    const { signal, done } = startAbortable(toast);
+    const exact = ft === "video" && values.exactFormat && values.exactFormat !== "auto";
+    const formatLabel =
+      ft === "audio"
+        ? formatTitle(String(values.audioFmt ?? prefs.audioFormat))
+        : exact
+          ? `Format ${String(values.exactFormat).split("#")[0]}`
+          : `${QUALITY_TITLE[String(values.quality ?? prefs.videoQuality)] ?? "Best"} · ${formatTitle(String(values.container ?? prefs.videoContainer))}`;
+    const session = openSession(
+      { kind: ft === "audio" ? "audio" : "video", url: submitUrl, folder, format: formatLabel },
+      true,
+    );
+    const { signal, done } = startAbortable(toast, session);
     try {
       const { filePath } = await runVideoDownload(
         getytdlPath(),
@@ -533,8 +739,10 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
           idleMs: getIdleTimeoutMs(),
           abortSignal: signal,
         },
-        (percent) => {
-          toast.message = `${Math.floor(percent)}%`;
+        () => undefined,
+        (event) => {
+          session.ytdlp(event);
+          if (event.type === "progress") toast.message = progressMessage(session.getSnapshot()) || toast.message;
         },
       );
       toast.style = Toast.Style.Success;
@@ -555,8 +763,10 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
       } else {
         toast.secondaryAction = undefined;
       }
+      succeedSession(session, toast, filePath);
     } catch (error) {
-      failToast(toast, error);
+      if (failToast(toast, error)) await hintOutdatedTool(toast, "yt-dlp");
+      failSession(session, toast, error);
     } finally {
       done();
     }
@@ -569,23 +779,49 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
         <ActionPanel>
           <Action.SubmitForm icon={Icon.Download} title="Download" onSubmit={handleSubmit} />
           <ActionPanel.Section>
-            <Action.Push icon={Icon.Hammer} title="Update Libraries" target={<Updater />} />
-            <Action.OpenInBrowser
-              icon={Icon.Info}
-              title="About This Extension"
-              url="https://github.com/sth3no/the-downloader/blob/main/ABOUT.md"
+            {metaReady && video && (
+              <Action.Push
+                icon={Icon.Eye}
+                title="Preview Media"
+                shortcut={Keyboard.Shortcut.Common.ToggleQuickLook}
+                target={<MediaPreview video={video} url={normalizeUrl(url)} />}
+              />
+            )}
+            {validUrl && source !== "spotify" && <ChatAboutLinkAction url={normalizeUrl(url)} />}
+            <Action.Push
+              icon={Icon.Clock}
+              title="Show Download History"
+              shortcut={HISTORY_SHORTCUT}
+              target={<DownloadHistory />}
             />
+            {validUrl && (
+              <Action.OpenInBrowser
+                title="Open URL in Browser"
+                url={normalizeUrl(url)}
+                shortcut={Keyboard.Shortcut.Common.Open}
+              />
+            )}
+            <Action icon={Icon.Folder} title="Open Download Folder" onAction={() => open(downloadPath)} />
+          </ActionPanel.Section>
+          <ActionPanel.Section>
+            <Action.Push
+              icon={Icon.Hammer}
+              title="Update Libraries"
+              // A shortcut, since this last section sits below the fold of the action panel.
+              shortcut={{
+                macOS: { modifiers: ["cmd", "shift"], key: "u" },
+                Windows: { modifiers: ["ctrl", "shift"], key: "u" },
+              }}
+              target={<Updater />}
+            />
+            <Action.OpenInBrowser icon={Icon.Info} title="About This Extension" url={ABOUT_URL} />
           </ActionPanel.Section>
         </ActionPanel>
       }
-      searchBarAccessory={
-        <Form.LinkAccessory
-          text="Supported Sites"
-          target="https://github.com/sth3no/the-downloader/blob/main/SUPPORTED_SITES.md"
-        />
-      }
+      searchBarAccessory={<Form.LinkAccessory text="Supported Sites" target={SUPPORTED_SITES_URL} />}
     >
       <Form.Description title={statusLabel} text={statusText} />
+      {detailsText && <Form.Description title="Details" text={detailsText} />}
       <Form.TextField
         id="url"
         title="URL"
@@ -603,6 +839,10 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
             value={filetype}
             info={filetypeGuidance(source)}
             onChange={(next) => {
+              // Only a real pick counts: if Raycast reports the type shown for a new
+              // link (Image for Pinterest), the user's own choice must stay, so
+              // pasting a video link again brings their Audio back.
+              if (next === filetype) return;
               setFiletype(next as Filetype);
               setFiletypeTouched(true);
             }}
@@ -614,14 +854,32 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
 
           {filetype === "video" && (
             <>
-              <Form.Dropdown id="quality" title="Quality" defaultValue={prefs.videoQuality}>
-                <Form.Dropdown.Item value="best" title="Best Available" />
-                <Form.Dropdown.Item value="1080" title="1080p" />
-                <Form.Dropdown.Item value="720" title="720p" />
-                <Form.Dropdown.Item value="480" title="480p" />
-                <Form.Dropdown.Item value="smallest" title="Smallest File" />
+              <Form.Dropdown
+                id="quality"
+                title="Quality"
+                defaultValue={prefs.videoQuality}
+                info={
+                  estimates
+                    ? "Resolution and size of what each choice downloads, estimated from the formats the site lists."
+                    : undefined
+                }
+              >
+                {QUALITY_VALUES.map((q) => (
+                  <Form.Dropdown.Item
+                    key={q}
+                    value={q}
+                    title={qualityTitle(q, estimates?.[q])}
+                    icon={q === "best" ? Icon.Star : q === "smallest" ? Icon.ArrowDown : Icon.Monitor}
+                  />
+                ))}
               </Form.Dropdown>
-              <Form.Dropdown id="container" title="Container" defaultValue={prefs.videoContainer}>
+              <Form.Dropdown
+                id="container"
+                title="Container"
+                value={container}
+                onChange={setContainer}
+                info="MP4 prefers H.264 so the file opens in QuickTime and most players (up to 1080p on YouTube). MKV and WebM take the best streams of any codec."
+              >
                 <Form.Dropdown.Item value="mp4" title="MP4" />
                 <Form.Dropdown.Item value="mkv" title="MKV" />
                 <Form.Dropdown.Item value="webm" title="WebM" />
@@ -644,6 +902,11 @@ export function DownloadForm({ initialUrl }: DownloadFormProps) {
               key={`audioFmt-${source}`}
               title="Format"
               defaultValue={source === "spotify" ? prefs.spotifyAudioFormat : prefs.audioFormat}
+              info={
+                source === "spotify"
+                  ? undefined
+                  : "MP3 plays everywhere but is re-encoded. M4A and Opus keep the site's original audio when it already comes in that format."
+              }
             >
               <Form.Dropdown.Item value="mp3" title="MP3" />
               <Form.Dropdown.Item value="m4a" title="M4A" />

@@ -1,4 +1,5 @@
 import { SourceType } from "../types.js";
+import { normalizeUrl } from "./url.js";
 
 const GALLERY_DOMAINS = [
   "reddit.com",
@@ -43,10 +44,10 @@ const VIDEO_DOMAINS = [
   "streamable.com",
 ];
 
-function hostnameOf(url: string): string {
+/** The URL's host without `www.`, with or without a scheme; "" when it can't be parsed. */
+export function hostnameOf(url: string): string {
   try {
-    const withProtocol = url.startsWith("http") ? url : `https://${url}`;
-    return new URL(withProtocol).hostname.replace(/^www\./, "");
+    return new URL(normalizeUrl(url)).hostname.replace(/^www\./, "");
   } catch {
     return "";
   }
@@ -54,6 +55,14 @@ function hostnameOf(url: string): string {
 
 function matches(host: string, domains: string[]): boolean {
   return domains.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+/**
+ * True for YouTube links. yt-dlp needs a JavaScript runtime (Deno) to read
+ * YouTube's player; other sites download without one.
+ */
+export function needsJsRuntime(url: string): boolean {
+  return matches(hostnameOf(url), ["youtube.com", "youtu.be"]);
 }
 
 /**
