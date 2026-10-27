@@ -80,6 +80,24 @@ for (const file of tracked) {
   cpSync(path.join(repo, file), path.join(target, file), { recursive: true });
 }
 
+// macOS and Windows ignore case, so git there doesn't notice a rename that only
+// changes case (HELP.md → help.md). Stage those renames explicitly.
+const storeFiles = new Map(
+  git(storeRepo, ["ls-files", "-z", "--", `extensions/${name}`])
+    .split("\0")
+    .filter(Boolean)
+    .map((file) => [file.toLowerCase(), file]),
+);
+for (const file of tracked) {
+  const wanted = `extensions/${name}/${file}`;
+  const stored = storeFiles.get(wanted.toLowerCase());
+  if (stored && stored !== wanted) {
+    git(storeRepo, ["rm", "--cached", "-q", "--", stored]);
+    git(storeRepo, ["add", "--", wanted]);
+    console.log(`Staged the rename ${stored} → ${wanted}`);
+  }
+}
+
 const npm = (args) => execSync(`npm ${args}`, { cwd: target, stdio: "inherit" });
 npm(`pkg delete ${DEV_ONLY_SCRIPTS.map((script) => `scripts.${script}`).join(" ")}`);
 // Uninstalling also drops the packages from package-lock.json.
