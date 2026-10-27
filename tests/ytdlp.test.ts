@@ -388,7 +388,13 @@ describe("Stop cleans up partial downloads", () => {
       const controller = new AbortController();
       const promise = runVideoDownload(
         "/yt-dlp",
-        { url: "https://youtu.be/abc", format: "bv*+ba#mp4", outputTemplate: "/o", ffmpegPath: "/ff", abortSignal: controller.signal },
+        {
+          url: "https://youtu.be/abc",
+          format: "bv*+ba#mp4",
+          outputTemplate: "/o",
+          ffmpegPath: "/ff",
+          abortSignal: controller.signal,
+        },
         () => undefined,
       );
       child.stdout.emit("data", Buffer.from(`[download] Destination: ${destination}\n`));

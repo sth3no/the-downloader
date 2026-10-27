@@ -4,7 +4,10 @@ import { uniqueFilePath } from "../src/lib/unique-path";
 
 describe("uniqueFilePath", () => {
   const folder = "/out";
-  const taken = (...names: string[]) => (p: string) => names.map((n) => path.join(folder, n)).includes(p);
+  const taken =
+    (...names: string[]) =>
+    (p: string) =>
+      names.map((n) => path.join(folder, n)).includes(p);
 
   it("uses the plain name when it's free", () => {
     expect(uniqueFilePath(folder, "Talk", "txt", taken())).toBe(path.join(folder, "Talk.txt"));
