@@ -36,5 +36,7 @@ jobs:
       - name: ESLint
         run: npx eslint src
 
+      # tests/fixtures/ holds recorded pages and API responses kept byte-for-byte,
+      # so only the test sources are formatted.
       - name: Prettier
-        run: npx prettier --check src tests
+        run: npx prettier --check src "tests/**/*.ts"
