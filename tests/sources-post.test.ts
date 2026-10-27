@@ -149,6 +149,7 @@ describe("loadPostLink", () => {
     ],
   ];
   const NOTHING = "Couldn't read this post: gallery-dl found nothing at this link.";
+  const PINIT = { category: "pinterest", subcategory: "pinit" };
 
   // Real `gallery-dl -j` output for a pin.it link: only the pin it stands for, as a queue record.
   it("reads the pin a pin.it short link stands for", async () => {
@@ -200,10 +201,29 @@ describe("loadPostLink", () => {
       "https://www.pinterest.com\\@192.168.1.10/",
     ]) {
       vi.mocked(runWithWatchdog).mockReset();
-      vi.mocked(runWithWatchdog).mockResolvedValueOnce(printed([[6, target, {}]]));
+      vi.mocked(runWithWatchdog).mockResolvedValueOnce(printed([[6, target, PINIT]]));
       await expect(loadPostLink("https://pin.it/Hvt8hgT", {})).rejects.toThrow(NOTHING);
       expect(runWithWatchdog).toHaveBeenCalledTimes(1);
     }
+  });
+
+  // A profile prints a queue record per board or section (real Pinterest output
+  // had 153); its first board isn't the profile, so it is "found nothing" as before.
+  it("doesn't read a profile's first board or section as if it were the profile", async () => {
+    const user = { category: "pinterest", subcategory: "user" };
+    vi.mocked(runWithWatchdog).mockResolvedValueOnce(
+      printed([
+        [6, "https://www.pinterest.com/pinterest/holiday-decor-ideas/", user],
+        [6, "https://www.pinterest.com/pinterest/try-a-new-holiday-manicure/", user],
+      ]),
+    );
+    await expect(loadPostLink("https://www.pinterest.com/pinterest/", {})).rejects.toThrow(NOTHING);
+
+    vi.mocked(runWithWatchdog).mockResolvedValueOnce(
+      printed([[6, "https://www.instagram.com/instagram/posts/", { category: "instagram", subcategory: "user" }]]),
+    );
+    await expect(loadPostLink("https://www.instagram.com/instagram/", {})).rejects.toThrow(NOTHING);
+    expect(runWithWatchdog).toHaveBeenCalledTimes(2);
   });
 
   it("leaves queue records alone when the post itself, or an error, was found", async () => {
